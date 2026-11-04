@@ -5,7 +5,6 @@
 - 原来的长实验命令还在各自的 runbook 里，在新仓库里同样可用：
   - DenseTNT / MetaDrive / RL：`responsibility/RUNBOOK_H200.md`
   - SMART：`responsibility/CATK_H200.md`、`docs/smart/RUNBOOK.md`（脚本路径已从 `scripts/responsibility/` 改成 `scripts/smart/`）
-  - GPUDrive：`gpucat/PLAN.md`
 - 本文只写新增的核对步骤。
 
 带 ⏱ 的时间是按 `SMART_PLAN.md` S3 的吞吐量（500 个场景约 10 小时，每次模型调用 32 份场景副本）推算的估计，没有实测过。
@@ -59,7 +58,7 @@ cat39 里没有 omegaconf 时，`tests/smart` 整个目录会被跳过（`tests/
 source ~/venvs/catk/bin/activate && python -m pytest tests/smart tests/responsibility/test_predictors.py -q
 ```
 
-本机（Python 3.11，torch 2.4.1 CPU，PyG 2.6.1，TensorFlow 2.15）上，`pytest tests` 的结果是 450 passed、3 skipped，跳过的那 3 个需要 UniTraj、WOMD protos 或 MetaDrive；去掉 omegaconf 时是 241 passed、3 skipped（`tests/smart` 被跳过）。
+本机（Python 3.11，torch 2.4.1 CPU，PyG 2.6.1，TensorFlow 2.15）上，`pytest tests` 的结果是 428 passed、3 skipped，跳过的那 3 个需要 UniTraj、WOMD protos 或 MetaDrive；去掉 omegaconf 时是 219 passed、3 skipped（`tests/smart` 被跳过）。
 
 ## 3. DenseTNT：结果不变（约 20 分钟，GPU）
 

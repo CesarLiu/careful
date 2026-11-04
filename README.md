@@ -18,13 +18,13 @@ This repository merges two implementations that differed only in the motion pred
 
 | source | predictor | what it contributed |
 |---|---|---|
-| [CesarLiu/catspond](https://github.com/CesarLiu/catspond) `gpudrive-ppo` @ `0865ed8` | CAT's DenseTNT, UniTraj MTR | `responsibility/` (metrics, attribution, rules, records), CAT TD3 in MetaDrive, PPO in GPUDrive |
+| [CesarLiu/catspond](https://github.com/CesarLiu/catspond) `gpudrive-ppo` @ `0865ed8` | CAT's DenseTNT, UniTraj MTR | `responsibility/` (metrics, attribution, rules, records), CAT TD3 in MetaDrive (its GPUDrive PPO port is not carried over on this branch) |
 | [CesarLiu/catk4test](https://github.com/CesarLiu/catk4test) `main` @ `1bc7e22` | CAT-K's SMART | the batched SMART counterfactual pipeline, exact token courtesy, reward networks, SMART reward fine-tuning, scenario tags, the aggression-judging skill |
 
 The responsibility code now lives in one package, and every motion predictor
 plugs into it through a single adapter interface.
 
-> **中文概要**：本仓库把 catspond（DenseTNT / MTR，含 MetaDrive TD3 与 GPUDrive PPO 训练）和 catk4test（CAT-K 的 SMART）两份 counterfactual responsibility 实现合并。责任度量（`responsibility/`）与运动预测器解耦：预测器只需实现 `distribution()` 和 `sample()` 两个方法（`responsibility/predictors/base.py`），即可用 `--model densetnt|mtr|unitraj|smart|constant_velocity` 或 `--model 包.模块:工厂函数` 切换。UniTraj 的任一方法（MTR、Wayformer、AutoBot、EMP…）都可以通过 `--model unitraj --unitraj-method <方法>` 使用。RL 训练部分（MetaDrive TD3、GPUDrive PPO、SMART 奖励微调）全部保留，并且 fair 对手的约束和碰撞归因也可以换用任意预测器（`--resp_model`、`--blame_model`）。
+> **中文概要**：本仓库把 catspond（DenseTNT / MTR，含 MetaDrive TD3 训练）和 catk4test（CAT-K 的 SMART）两份 counterfactual responsibility 实现合并。责任度量（`responsibility/`）与运动预测器解耦：预测器只需实现 `distribution()` 和 `sample()` 两个方法（`responsibility/predictors/base.py`），即可用 `--model densetnt|mtr|unitraj|smart|constant_velocity` 或 `--model 包.模块:工厂函数` 切换。UniTraj 的任一方法（MTR、Wayformer、AutoBot、EMP…）都可以通过 `--model unitraj --unitraj-method <方法>` 使用。RL 训练部分保留 MetaDrive TD3 和 SMART 奖励微调（这个分支去掉了 GPUDrive PPO，即 `gpucat/`），并且 fair 对手的约束和碰撞归因也可以换用任意预测器（`--resp_model`、`--blame_model`）。
 
 ## Layout
 
@@ -50,11 +50,9 @@ responsibility/                 predictor-agnostic metrics and tools (operate on
       scene_data.py             Scene -> CAT-K's PyG batch, in memory
       catk.py, configs/         finding the CAT-K checkout; Hydra config over its configs/
       native/                   CAT-K's own batched pipeline (from catk4test src/responsibility)
-gpucat/                         GPUDrive environment, CAT/fair adversary on GPU, PPO
 advgen/ saferl_algo/ saferl_plotter/ cat_RLtrain.py cat_advgen.py    CAT (MetaDrive, TD3; upstream code)
 scripts/responsibility/         CLI for the predictor-agnostic pipeline (any --model)
 scripts/smart/                  CLI for the native SMART pipeline (CAT-K environment)
-scripts/gpucat/                 GPUDrive PPO training, precomputation, audits
 tests/responsibility/  tests/smart/
 docs/                           CAT's readme, the SMART method notes and runbook
 skills/judge-driving-aggression/    Claude skill: rule-based aggression judging with jurisdictions
@@ -65,7 +63,7 @@ regression of old DenseTNT runs (`scripts/responsibility/regress_run.py`), the
 SMART adapter on a real checkpoint, and the adapter-vs-native comparison.
 `responsibility/README.md` is the detailed reference: every metric, every script,
 the design decisions and the measured results. The Chinese plans and runbooks
-(`responsibility/*PLAN*.md`, `RUNBOOK_H200.md`, `CATK_H200.md`, `gpucat/PLAN.md`)
+(`responsibility/*PLAN*.md`, `RUNBOOK_H200.md`, `CATK_H200.md`)
 are kept as they were. `docs/smart/responsibility.md` documents the SMART method.
 
 ## Motion predictors
@@ -162,13 +160,14 @@ in this repository's run format.
 
 ## RL training
 
-All three training loops of the source repositories are kept. The
-responsibility parts they use now accept any predictor.
+Two training loops are kept: CAT's TD3 in MetaDrive and SMART's reward
+fine-tuning. The GPUDrive PPO port of CAT (`gpucat/`, `scripts/gpucat/`) is
+not on this branch; it is on `main`. The responsibility parts the loops use
+accept any predictor.
 
 | loop | simulator, algorithm | entry point | responsibility hooks |
 |---|---|---|---|
 | CAT | MetaDrive, TD3 | `cat_RLtrain.py` (`cat_advgen.py` for the adversary alone) | `--adv_selection cat\|constrained\|penalized\|fair\|near` with `--resp_model` for the fair rule's motion sets; `--blame_weighting share\|rss` with `--blame_model` for the attribution |
-| GPU CAT | GPUDrive (Madrona), PPO | `scripts/gpucat/train.py --mode replay\|cat\|fair\|fair_valid` | the adversary bank from `scripts/gpucat/precompute_candidates.py --resp_model ...` |
 | SMART fine-tuning | CAT-K SMART, policy-gradient fine-tuning toward a responsibility level | `scripts/smart/finetune_reward.py` | reward networks from `scripts/smart/train_reward.py` |
 
 ```bash
@@ -176,8 +175,6 @@ responsibility parts they use now accept any predictor.
 python -u cat_RLtrain.py --adv_selection fair --resp_threshold 1 --resp_avoid 0.3 \
     --resp_model mtr --resp_checkpoint ckpts/mtr.ckpt \
     --blame_weighting share --blame_model mtr --blame_checkpoint ckpts/mtr.ckpt
-# GPUDrive PPO (GPUDrive's environment)
-PYTHONPATH=~/gpudrive/build:~/gpudrive:. python -m scripts.gpucat.train --mode fair --seed 0 --out logs/gpucat/runs/fair_s0
 ```
 
 The fair adversary's *candidates* are always CAT's 32 DenseTNT NMS modes; only
@@ -196,7 +193,6 @@ matplotlib.
 | CAT (Python 3.9) | DenseTNT, MetaDrive TD3, the scripts in `responsibility/README.md` | `bash scripts/responsibility/setup_env.sh` (`advgen/utils_cython*.so` is built for 3.9; `python scripts/responsibility/build_cython.py` rebuilds it for another version) |
 | UniTraj | MTR, Wayformer, AutoBot, ... | `bash scripts/responsibility/setup_unitraj_env.sh`; `UNITRAJ_ROOT` |
 | CAT-K (Python 3.11) | SMART, `scripts/smart/*` | CAT-K's `install/setup_server.sh`; `CATK_ROOT` |
-| GPUDrive | `gpucat/`, `scripts/gpucat/*` | `responsibility/GPUDRIVE_NOTES.md` |
 
 Not in git: `raw_scenes_500/`, CAT's modified `metadrive/`, `advgen/pretrained/densetnt.bin`
 (see `docs/CAT_README.md`), checkpoints, WOMD and its caches.
@@ -215,7 +211,7 @@ TensorFlow, a UniTraj checkout or CAT-K skip or fail to collect without them.
 
 Verified while merging, in one Python 3.11 environment (torch 2.4.1 CPU, PyG 2.6.1, torch_cluster 1.6.3, TensorFlow 2.15):
 
-- `pytest tests`: 450 passed, 3 skipped (they need a UniTraj checkout, WOMD protos and MetaDrive); `test_unitraj.py` alone, with `UNITRAJ_ROOT` set, passes all 15 tests;
+- `pytest tests`: 428 passed, 3 skipped (they need a UniTraj checkout, WOMD protos and MetaDrive); `test_unitraj.py` alone, with `UNITRAJ_ROOT` set, passes all 15 tests;
 - `scripts/smart/verify_adapter.py` on a randomly initialised CAT-K SMART (`smart_nano_1M`), a synthetic scene with WOMD's 0.5 m point spacing: all 7 checks pass. SMART sees the map (80 tokens), the first sampled position is within 1.16 m of the logged one, samples are reproducible from the generator, removing a neighbour changes the free agent's token log-probabilities, and rollouts stop where the log does (80 steps from k = 10, 70 from k = 20);
 - `scripts/smart/compare_adapter_native.py` on the same model and 3 synthetic scenes (78 window-neighbour pairs, 2 seeds per path): the adapter and CAT-K's native pipeline agree within seed noise (safety Spearman 0.960 against 0.951–0.970 between seeds, courtesy 0.875 against 0.893–0.904);
 - UniTraj Wayformer and AutoBot (random weights) through `unitraj_predictor` and the metrics: 6 modes of 60 steps each, finite β_s and β_c;

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this repository is
 
-Counterfactual responsibility (Hsu et al., IROS 2023) for driving, independent of the motion predictor. It merges two implementations that differed only in the predictor: `CesarLiu/catspond` (branch `gpudrive-ppo`: CAT's DenseTNT and UniTraj's MTR, with CAT's TD3 training in MetaDrive and PPO in GPUDrive) and `CesarLiu/catk4test` (CAT-K's SMART). `README.md` describes the layout, the predictor interface and the three RL training loops. The metrics are used for three things:
+Counterfactual responsibility (Hsu et al., IROS 2023) for driving, independent of the motion predictor. It merges two implementations that differed only in the predictor: `CesarLiu/catspond` (branch `gpudrive-ppo`: CAT's DenseTNT and UniTraj's MTR, with CAT's TD3 training in MetaDrive; its GPUDrive PPO port, `gpucat/`, is not on this branch) and `CesarLiu/catk4test` (CAT-K's SMART). `README.md` describes the layout, the predictor interface and the two RL training loops (MetaDrive TD3, SMART reward fine-tuning). The metrics are used for three things:
 
 - measuring how aggressively or timidly a driver behaves;
 - constraining CAT's adversary to "fair" (responsible and avoidable) trajectories;
