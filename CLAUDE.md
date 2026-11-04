@@ -35,7 +35,9 @@ python -m scripts.responsibility.verify_densetnt --n 3 --device cuda      # need
 
 - `test_adversarial.py` and `test_benchmark.py` import TensorFlow. Without it they skip or fail to collect.
 - `test_unitraj.py` skips unless `UNITRAJ_ROOT` points at a UniTraj checkout (its dataset code also needs `metadrive/type.py`: CAT's `metadrive/` at the root or an installed MetaDrive).
-- `tests/smart` stubs `src.smart.modules.agent_decoder` (conftest), so it runs without CAT-K; `scripts/smart/verify_adapter.py` checks `SmartPredictor` against a real (or randomly initialised) SMART in CAT-K's environment.
+- `tests/smart` stubs `src.smart.modules.agent_decoder` (conftest), so it runs without CAT-K, and is skipped where omegaconf is missing (the Python 3.9 CAT env). `scripts/smart/verify_adapter.py` checks `SmartPredictor` against a real (or `--ckpt random`) SMART in CAT-K's environment; `scripts/smart/compare_adapter_native.py` compares it with the native pipeline on the same neighbours, against seed noise.
+- `docs/RUNBOOK.md` is the server checklist after the merge; `scripts/responsibility/regress_run.py` checks that a new run reproduces an old one window for window.
+- CAT-K's map preprocessing drops polylines spaced over 3 m (it expects WOMD's 0.5 m); synthetic scenes for SMART must use 0.5 m spacing (`scene_data.check_map` warns).
 - Always run from the repository root, and run scripts as modules (`python -m scripts.responsibility.<name>`). Scripts insert the repo root into `sys.path`.
 
 Several things are not in git and are usually **absent on a dev machine**:

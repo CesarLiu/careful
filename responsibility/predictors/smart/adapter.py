@@ -180,7 +180,9 @@ def load_smart_predictor(checkpoint: Optional[str], catk_root=None, model_config
                          device: str = "cpu", neighbor_future: str = "hidden", batch_size: int = 32,
                          horizon: Optional[int] = None) -> SmartPredictor:
     """A trained SMART checkpoint (CAT-K's Lightning .ckpt, with the
-    configs/model/<model_config>.yaml it was trained with) as a predictor."""
+    configs/model/<model_config>.yaml it was trained with) as a predictor;
+    ``checkpoint="random"`` builds the model with random weights (seed 0),
+    to test the environment and the plumbing without a checkpoint."""
     import os
 
     from responsibility.predictors.smart.catk import require_catk
@@ -194,12 +196,19 @@ def load_smart_predictor(checkpoint: Optional[str], catk_root=None, model_config
     from responsibility.predictors.smart.scene_data import catk_batch_builder
 
     device = resolve_device(device)
-    checkpoint = os.path.abspath(checkpoint)
+    random_weights = str(checkpoint) == "random"
+    checkpoint = checkpoint if random_weights else os.path.abspath(checkpoint)
     cwd = os.getcwd()
-    os.chdir(root)  # SMART reads its token files relative to the CAT-K root
+    os.chdir(root)  # CAT-K's configs resolve paths against its root
     try:
         cfg = compose_responsibility_config(overrides=[f"model={model_config}"])
-        model = load_smart_model(cfg.model.model_config, checkpoint, device=device)
+        if random_weights:
+            from src.smart.model.smart import SMART
+
+            torch.manual_seed(0)
+            model = SMART(cfg.model.model_config).eval().to(device)
+        else:
+            model = load_smart_model(cfg.model.model_config, checkpoint, device=device)
     finally:
         os.chdir(cwd)
     history = int(cfg.model.model_config.decoder.num_historical_steps)

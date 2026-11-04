@@ -362,7 +362,8 @@ def demand_courtesy(model, scene: Scene, agent: int, b: int, step: int, cfg: Res
 
 def responsibility_at(model, scene: Scene, agent: int, step: int, cfg: ResponsibilityConfig,
                       generator: Optional[torch.Generator] = None,
-                      record: Optional[Dict] = None) -> Optional[Observation]:
+                      record: Optional[Dict] = None,
+                      neighbours: Optional[Dict[int, Dict]] = None) -> Optional[Observation]:
     """Safety and courtesy responsibility of ``agent`` at context step
     ``step``, or None when DenseTNT has no prediction for it there.
 
@@ -381,7 +382,12 @@ def responsibility_at(model, scene: Scene, agent: int, step: int, cfg: Responsib
     beta_s used}. With ``courtesy_estimator="demand"``, "courtesy" holds
     {neighbour index: (Demand, plans [N, H, 2], weights)} instead (None
     where it was not measured); with "boltzmann", {neighbour index: (KL,
-    pooled trajectories [2n, H, 2], log P1, log P2)}."""
+    pooled trajectories [2n, H, 2], log P1, log P2)}.
+
+    ``neighbours``, if given ({neighbour index: interaction evidence}),
+    replaces the neighbour selection (cfg.use_ooi / cfg.interaction): the
+    metrics are then taken against exactly these agents, e.g. another
+    pipeline's choice (scripts/smart/compare_adapter_native.py)."""
     if cfg.courtesy_estimator not in COURTESY_ESTIMATORS:
         raise ValueError(f"courtesy_estimator must be one of {COURTESY_ESTIMATORS}, not {cfg.courtesy_estimator!r}")
     horizon = effective_horizon(scene, step, cfg)
@@ -390,8 +396,11 @@ def responsibility_at(model, scene: Scene, agent: int, step: int, cfg: Responsib
     dist = model.distribution(scene, step, agent)
     if dist is None:
         return None
-    select = ooi_neighbours if cfg.use_ooi else interacting_neighbours
-    neighbours = select(scene, agent, step, horizon, cfg.interaction)
+    if neighbours is None:
+        select = ooi_neighbours if cfg.use_ooi else interacting_neighbours
+        neighbours = select(scene, agent, step, horizon, cfg.interaction)
+    else:  # given: {neighbour index: evidence}, e.g. another pipeline's selection, to compare like with like
+        neighbours = {int(b): dict(e) for b, e in neighbours.items() if b != agent}
     fut = slice(step + 1, step + 1 + horizon)
     speed = float(np.linalg.norm(scene.velocity[agent, step]))
     per_neighbour: Dict[str, Dict[str, float]] = {}

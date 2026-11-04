@@ -155,3 +155,25 @@ class _SamplesOnly(ConstantVelocity):
 
 def samples_only(args, device):
     return _SamplesOnly()
+
+
+def test_a_run_regresses_against_itself(tmp_path, monkeypatch, capsys):
+    from scripts.responsibility import compute_responsibility, regress_run
+
+    scenes = tmp_path / "scenes"
+    scenes.mkdir()
+    for i in range(3):
+        with open(scenes / f"{i}.pkl", "wb") as f:
+            pickle.dump(two_cars().to_description(), f)
+    flags = ["--scenes", str(scenes), "--model", "constant_velocity", "--device", "cpu"]
+    monkeypatch.setattr(sys, "argv", ["c", *flags, "--out-dir", str(tmp_path / "old")])
+    compute_responsibility.main()
+    regress_run.prepare(tmp_path / "old", tmp_path / "new")
+    monkeypatch.setattr(sys, "argv", ["c", *flags, "--n", "2", "--out-dir", str(tmp_path / "new")])
+    compute_responsibility.main()
+    assert regress_run.compare(tmp_path / "old", tmp_path / "new", 1e-4)
+    assert capsys.readouterr().out.strip().endswith("IDENTICAL")
+    # other settings are refused by compute_responsibility itself
+    monkeypatch.setattr(sys, "argv", ["c", *flags, "--n", "2", "--stride", "10", "--out-dir", str(tmp_path / "new")])
+    with pytest.raises(SystemExit, match="other settings"):
+        compute_responsibility.main()

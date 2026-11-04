@@ -19,6 +19,11 @@ import types
 import pytest
 import torch
 
+try:  # the SMART pipeline needs omegaconf (CAT-K's environment); elsewhere, e.g. the Python 3.9 CAT env, skip it
+    import omegaconf  # noqa: F401
+except ImportError:
+    collect_ignore_glob = ["test_*.py"]
+
 N_TOKEN = 32
 N_STEP_TOKEN = 18  # 2Hz steps in the cached WOMD format
 N_FUTURE_2HZ = 16  # steps SMARTAgentDecoder.inference rolls out

@@ -17,8 +17,9 @@
 #   SAMPLES  DenseTNT samples per window (safety)      (40)
 #   RECORDS  1: also write per-scene records for offline
 #            inspection/visualisation (--save-records)  (0)
-#   MODEL    motion model: densetnt or mtr             (densetnt)
-#   CHECKPOINT  mtr: the trained MTR checkpoint         ("")
+#   MODEL    motion predictor: densetnt, mtr, unitraj, smart, constant_velocity or pkg.module:factory (densetnt);
+#            smart needs the CAT-K environment and CATK_ROOT, mtr/unitraj UNITRAJ_ROOT
+#   CHECKPOINT  mtr / unitraj / smart: the trained checkpoint   ("")
 #   EXTRA    further compute_responsibility.py flags    ("")
 #            e.g. EXTRA="--horizon 30 --d-sat 15" or, with MODEL=mtr, EXTRA="--motion-set weighted"
 #

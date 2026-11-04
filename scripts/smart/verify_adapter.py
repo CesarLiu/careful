@@ -3,6 +3,7 @@ a real CAT-K SMART: the Scene -> PyG conversion, the rollouts and the
 predictor-agnostic metrics on top of them. Prints PASS/FAIL per check and
 ends with ALL CHECKS PASSED.
 
+  0. SMART sees the map (CAT-K's preprocessing drops polylines spaced over 3 m)
   1. every agent observed at k is in the batch, under its own track id
   2. samples start where the agent is: the first sampled position is within
      --start-tol m of its logged position at k + 1
@@ -59,7 +60,8 @@ def synthetic_scene() -> Scene:
             "height": np.full(91, 1.5, np.float32), "valid": np.ones(91, bool)}}
 
     lanes = {str(100 + i): {"type": "LANE_SURFACE_STREET",
-                            "polyline": np.stack([np.linspace(-50, 150, 41), np.full(41, 3.5 * i), np.zeros(41)], 1)}
+                            "polyline": np.stack([np.linspace(-50, 150, 401), np.full(401, 3.5 * i),
+                                                  np.zeros(401)], 1)}  # WOMD's 0.5 m spacing
              for i in range(2)}
     return Scene.from_description({
         "id": "synthetic", "tracks": {"0": track(0.0, 0.0, 11.0), "1": track(12.0, 0.0, 8.0),
@@ -82,29 +84,14 @@ def main(argv=None):
     args = p.parse_args(argv)
 
     from responsibility.catk_export import numeric_id
-    from responsibility.predictors.smart import SmartPredictor, load_smart_predictor
+    from responsibility.predictors.smart import load_smart_predictor
     from responsibility.predictors.smart.catk import require_catk
+    from responsibility.predictors.smart.scene_data import check_map
 
     root = require_catk(args.catk_root)
-    if args.ckpt:
-        predictor = load_smart_predictor(args.ckpt, root, args.model_config, args.device, batch_size=args.samples)
-    else:
-        from responsibility.predictors.smart.native.pipeline import (compose_responsibility_config,
-                                                                       default_sampling_scheme, resolve_device)
-        from responsibility.predictors.smart.scene_data import catk_batch_builder
-        from src.smart.model.smart import SMART
-
-        device = resolve_device(args.device)
-        cwd = os.getcwd()
-        os.chdir(root)
-        try:
-            cfg = compose_responsibility_config(overrides=[f"model={args.model_config}"])
-            torch.manual_seed(0)
-            model = SMART(cfg.model.model_config).eval().to(device)
-        finally:
-            os.chdir(cwd)
-        predictor = SmartPredictor(model, default_sampling_scheme(), catk_batch_builder(root, device),
-                                   batch_size=args.samples)
+    predictor = load_smart_predictor(args.ckpt or "random", root, args.model_config, args.device,
+                                     batch_size=args.samples)
+    if not args.ckpt:
         print("random weights: checks 1-5 apply; the values of check 6 mean nothing")
 
     scenes = [synthetic_scene()] if not args.scenes else [Scene.load(f) for f in scene_files(args.scenes)[:args.n]]
@@ -113,6 +100,7 @@ def main(argv=None):
         print(f"--- scene {scene.scenario_id}: {scene.n_agents} agents, step {k}")
         a = scene.sdc
         ctx = predictor._context(scene, k)
+        check("0 SMART sees the map", check_map(scene, ctx.data), f"{int(ctx.data['map_save']['traj_pos'].shape[0])} map tokens")
         observed = {numeric_id(scene.track_ids[i]) for i in range(scene.n_agents) if scene.valid[i, k]}
         check("1 batch holds the agents observed at k", set(ctx.rows) == observed,
               f"{len(ctx.rows)} rows, {len(observed)} observed")

@@ -14,13 +14,39 @@ the context step k: every agent observed at k is in it, and the lights are
 k's. ``SmartPredictor`` then re-anchors it with
 ``native.motion_set.shifted_context`` so that SMART's 11 history steps end
 at k. Positions stay in the scene frame, as in CAT-K's cache.
+
+CAT-K's map preprocessing assumes WOMD's 0.5 m point spacing: it cuts a
+polyline wherever two points are more than 3 m apart and drops pieces of
+fewer than two points. A map whose polylines are sparser (a synthetic map,
+another dataset's coarse lanes) therefore loses those polylines, and with
+none left SMART gets a one-token placeholder at (6e4, 6e4) m. ``build`` warns
+when a scene that has lanes comes out with that placeholder.
 """
 
+import warnings
 from typing import Callable, Iterable
+
+import numpy as np
 
 from responsibility.catk_export import dynamic_map_infos, map_infos, track_infos
 from responsibility.predictors.smart.catk import require_catk
 from responsibility.scene import Scene
+
+PLACEHOLDER_MAP = 6e4  # CAT-K's "dummy empty map" position (src/smart/utils/preprocess.py)
+
+
+def check_map(scene: Scene, data: dict) -> bool:
+    """False (with a warning) if CAT-K's preprocessing left ``scene``'s
+    lanes out entirely, i.e. SMART would roll out on an empty map."""
+    has_lanes = any(str(f.get("type", "")).startswith("LANE") for f in scene.map_features.values())
+    pos = data["map_save"]["traj_pos"]
+    pos = pos.detach().cpu().numpy() if hasattr(pos, "detach") else np.asarray(pos)
+    empty = pos.shape[0] == 1 and bool(np.all(pos == PLACEHOLDER_MAP))
+    if has_lanes and empty:
+        warnings.warn(f"{scene.scenario_id}: SMART sees no map -- CAT-K's preprocessing dropped every polyline "
+                      "(it cuts polylines at gaps over 3 m and expects WOMD's 0.5 m point spacing)")
+        return False
+    return True
 
 
 def catk_stage_two(catk_root=None) -> Callable:
@@ -37,6 +63,7 @@ def catk_stage_two(catk_root=None) -> Callable:
         data["agent"] = get_agent_features(track_infos(scene, predict), split="validation",
                                            num_historical_steps=current + 1, num_steps=scene.n_steps)
         data["scenario_id"] = stem if stem is not None else scene.scenario_id
+        check_map(scene, data)
         return data
 
     return build
