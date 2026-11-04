@@ -1,0 +1,9 @@
+scene,sdc_aggressive,ooi_aggressive,note
+13,0,0,"Reviewed 2026-10-22: no hard braking is visible, and the SDC had cleared the junction before the OOI turned."
+62,0,,"Reviewed 2026-10-22: the OOI was turning, not going straight; the SDC's right turn is fine."
+343,0,,"Reviewed 2026-10-22: the OOI was turning, not going straight; the SDC's right turn is fine."
+128,0,1,"Reviewed 2026-10-22: the OOI is aggressive, the SDC is not."
+163,,0,"Reviewed 2026-10-22: a stop sign; the OOI waited for the through traffic before turning left."
+360,0,0,"Reviewed 2026-10-22: both not aggressive; the distance is too far."
+391,0,,"Reviewed 2026-10-22: not aggressive."
+304,,0,"Reviewed 2026-10-22: the OOI's light is not in the map, but the OOI was allowed to turn left; not aggressive."

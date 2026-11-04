@@ -1,0 +1,5 @@
+item,n,agreement,kappa
+verdict (first car aggressive),48,1.0,1.0
+holder,48,0.875,0.7557251908396948
+first_violated_control,48,0.875,0.7765709852598913
+reaction_cause,48,0.6666666666666666,0.1890179514255541

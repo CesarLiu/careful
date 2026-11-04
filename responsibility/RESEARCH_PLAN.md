@@ -1,0 +1,191 @@
+# 研究方向实施计划（优先级：3 → 1 → 2）
+
+三个方向可以组成一篇完整的工作：用反事实责任约束对抗场景的生成（方向 1）和碰撞的归因（方向 2），得到既安全又不过度保守的驾驶策略；方向 3 提供评测手段，所以最先做。
+
+依赖关系：3 是 1 和 2 的评测基础；1 和 2 都会改 CAT 的训练流程，最终组成 2×2 的对比（对手：原版/公平 × 碰撞惩罚：原版/按责任）。
+
+标 🖥 的里程碑需要 MetaDrive，必须在服务器上开发和调试（本地没有 MetaDrive）；其余里程碑可以离线开发，用单元测试和 `raw_scenes_500` 验证。
+
+---
+
+## 方向 3：双向驾驶风格评测（激进 ↔ 胆怯）
+
+**目标：** 对任意驾驶策略，给出碰撞率之外的评价：它的碰撞里有多少是自己的责任；它有多少时间比人类激进（β_s > 0 且偏高），有多少时间比人类胆怯（β_s < 0，保持了比常规备选动作更大的余量）；它对他车计划的影响（β_c）；以及它的责任等级分布与 logged 人类驾驶的差异。
+
+### M3.0 🖥 CAT 评测流程核查（半天）
+> **状态：** `eval_policy` 的疑点已从代码排除：`BaseEnv.engine` 返回全局单例 `BaseEngine.singleton`，所以 `env.engine` 就是 `eval_env` 的引擎，对手轨迹会生效。步对齐和对手执行的滞后（预期晚一步）由 `collect_rollouts.py` 在服务器上实测打印，见 runbook 第 10a 步。另外修复了 `cat_RLtrain.py` 的模型文件不区分种子、3 个种子互相覆盖的问题，现在保存为 `models/<名字>_s<seed>`。
+- 核查 `cat_RLtrain.py::eval_policy` 的对抗评测：它用全局 `env` 而不是 `eval_env` 调 `set_adv_info`。在 `eval_env` 上确认对手轨迹确实生效：对抗回合里对手的位置应偏离 logged 轨迹。如果没生效，修复并记录，因为之前所有"对抗评测"数字都受影响。
+- 确认 MetaDrive 的仿真步长是 0.1 s，且 `log_AV_history` 记录的第 i 条对应场景的第 i 步（与 CAT 用 `ego_traj[11:91]` 的假设一致）。
+
+### M3.1 🖥 策略 rollout 采集：`scripts/responsibility/collect_rollouts.py`（2–3 天）
+> **状态：** 脚本已写好，记录逻辑有不依赖 MetaDrive 的单元测试（`test_collect.py`）。2026-10-04 在 L4 机器上抽样验收通过：
+> - 回放的自车与日志的误差是 0.000 m；
+> - CAT 的对手平均偏离日志 12.9 m，按计划晚一步执行（lag 1 误差 0.00 m）。
+>
+> 验收时发现并修复了两处问题：
+> - 记录器在场景里没有任何 logged 物体时会崩溃（提交 74766a3）；
+> - CAT 回放对手计划时会错位：对手在日志里出现得晚的话，会先被放到原点若干步（500 个场景里有 24 个，提交 0b94e88）。
+>
+> 测试集 100 个场景的完整参照 rollout 待重新采集（runbook 第 10a 步）。
+- **输入：** 策略，可以是 TD3 模型（`policy.load(models/<name>)`）或 `replay`（`ReplayEgoCarPolicy`，作为 logged 基线）；场景范围默认测试集 400–499，也可以是全部 500 个；对手模式 `none | cat | constrained | fair`（后两种沿用 `--adv_selection` 的参数）。
+- **每个回合记录：**
+  - 场景号；
+  - 每一步自车的位置、朝向、速度（复用 `AdvGenerator.log_AV_history`，或者直接读 `env.vehicle`）；
+  - 回合结束的步数和原因（`crash_vehicle`、`out_of_road`、`arrive_dest`、超时），以及 `route_completion`；
+  - 对手的 track id 和实际执行的对手轨迹（`adv_traj`）；
+  - 仿真里实际生成的交通车 id 列表（`no_static_vehicles=True` 会去掉静止车辆，场景文件里却仍然有它们）。
+- **输出：** `rollouts/<policy>/<adv_mode>/<scene>.pkl`，每个策略和模式一个 `config.json`。可续跑；可按场景分片，多进程并行。
+- **验收：** `replay` 策略的 rollout 与 logged 自车轨迹逐步一致（位置误差 < 0.1 m）；输出文件的结构有单元测试覆盖（不依赖 MetaDrive）。
+
+### M3.2 从 rollout 重建场景：`responsibility/rollouts.py`（1–2 天，可离线开发）
+> **状态：** 已完成。在真实场景上，回放 rollout 算出的值与剔除未生成物体后的 logged 场景完全一致（`verify_densetnt` 的 rollout 检查）。剔除静止车辆的影响：停车多的场景 1 里，β_s 平均变化 0.39 m，所以策略对比的参照必须用回放的 logged 驾驶。
+- `scene_from_rollout(scene, rollout)`：
+  - 用 `Scene.with_track` 把自车替换成仿真轨迹；
+  - 如果有对手，把对手替换成 `adv_traj`；
+  - 回合提前结束时，把之后的步标为无效；
+  - 仿真里没有生成的车（静止车辆）标为全程无效。
+- `compute_responsibility.py` 增加 `--rollouts DIR`：对每个 rollout 重建场景，查询自车，其余流程不变（分片、records、`summary`、`levels` 照常可用）。
+- **验收：**
+  - 用 `replay` 的 rollout 算出的责任，与直接用场景文件算出的一致，差异只来自静止车辆的剔除；
+  - 单元测试：提前结束、对手替换、静止车剔除。
+
+### M3.3 双向判定与策略对比：`summarize_responsibility` 扩展 + `compare_policies.py`（2 天，可离线开发）
+> **状态：** 已完成。碰撞归因实现在 `responsibility/blame.py`，M2.1 直接复用。归因由 `compute_responsibility --rollouts` 写到 `crashes.csv`。
+>
+> 回放参照的验收（2026-10-04，测试集 100 个场景，在 L4 机器上）：
+> - `replay/none` 的激进窗口占 10.1%，符合阈值的定义。胆怯窗口占全部窗口的 1.1%：胆怯阈值取的是负值窗口的 q10，而负值窗口本来就少。
+> - `replay/cat` 有 83 次碰撞，归因判 `other` 55 次、`ego` 22 次、`shared` 6 次。对手 β 的中位数 +1.02 m，自车 +0.21 m。
+> - 与追尾规则、RSS 在两者都给出判定的碰撞上的一致率：16/23 和 21/29，约 70%。但这两种规则只覆盖 30% 和 51% 的碰撞。
+> - fair 对手的 16 次碰撞判定均衡（ego 9 次、other 6 次），双方 β 都约 +0.2 m，符合"公平"的设计。
+> - 同一条 logged 自车轨迹，在 CAT 对手旁边的激进窗口占比是无对手时的 1.9 倍。β_s 以对方实际的行为为参照，所以比较策略时必须固定测试对手。
+- **胆怯阈值：** 在 logged SDC 的 β_s 负值上取 `--timid-quantile`（默认 q10），作为 `timid` 阈值；每个窗口和场景都给出激进、胆怯两个方向的标记。
+- **碰撞归因：** 对每次碰撞，取碰撞前 2 s 窗口，算自车对碰撞对象的 β_s 和对方对自车的 β_s。对方取距离自车最近的车，或者对手车。自车 β 高且对方低，判为"自车责任碰撞"。
+- **`compare_policies.py`：** 输入多个 rollout 的责任运行结果和 logged SDC 参照，输出一张表：
+
+  | 策略 × 对手模式 | 碰撞率 | 自车责任碰撞占比 | 完成率 | 激进窗口占比 | 胆怯窗口占比 | β_c p90 | 各等级占比 |
+  |---|---|---|---|---|---|---|---|
+
+  等级来自在 logged SDC 上拟合的 HMM（`fit_levels --fit-runs logs/responsibility/sdc`）。同时输出分布图：各策略的 β_s 小提琴图、等级占比条形图。
+- **验收：** 单元测试覆盖双向阈值和归因；在 `replay` 的 rollout 上，激进和胆怯占比应接近阈值定义给出的 10%/10%。
+
+### M3.4 🖥 基线评测（1–2 天，服务器上跑）
+> **状态：** 工具就绪，待在服务器上跑（runbook 第 10 步）。`compare_policies` 另写 `comparison_seeds.md`：3 个种子的均值 ± 标准差，以及"训练设置 × 测试对手"的矩阵。
+- 策略：`replay`（logged）、CAT 原论文训练出的 `cat`、`replay` 模式训练出的 TD3，各 3 个种子（用 runbook 第 8b 步的模型）。
+- 对手模式：`none` 和 `cat`。
+- **产出：** 第一张结论表，例如"CAT 训练降低了碰撞率，但胆怯窗口占比比人类高 X 倍"。这张表本身就是方向 3 的主要贡献。
+
+### M3.5 激进但不危险：强迫路权方让行（开环）
+> **状态：** 已完成第一版（2026-10-10）。`responsibility/forced_yield.py`：agent 进入冲突区的每一步，路权方要在冲突区前停下所需的减速度 a_req = v²/(2(d − vρ))，ρ = 1 s；只在对方持有路权时计入（`forced`）。a_req > 4 m/s² 等价于违反 yield 义务，2–4 m/s² 是"逼人让行但还安全"的区间。Ground truth 由 `make_go_first.py` 构造：从 logged 合法让行的对出发，把路权方整体推迟（`delay`），或把让行方沿原路径重新定时（`retime`），使让行方在路权方进入冲突区前 PET 秒离开。评估用 `evaluate_forced_yield.py`。冲突点取两条完整轨迹的第一个交点（改写只动时间、不动路径，所以 P* 不变）；改写场景沿用其 log 场景的路权判定（`carry_priority`），路权本身由 `validate_right_of_way` 单独验证。`visualize_forced_yield.py` 出图（log 与改写并排，加时间–距离图），供人工核对。在 held-out WOMD（本地 14 个分片）上，阈值取 logged 先行者 forced 的 0.9 分位数（1.53 m/s²）：logged 合法让行 3% 超阈值，logged 先行者 10%，`delay` PET 2 s 83%（18 对，其中违反 yield 义务的 1 对），PET 1 s 87%（47 对）。同一轮把 `right_of_way.py` 的同向规则（lane-change、merge）默认关闭：held-out 上 lane-change 的路权方先过只有 38%，同向冲突的 yield 义务对 logged 让行方误报 52–56%；交叉类规则路权方先过 83%（开发集 89%），义务误报 2%。
+- 局限：只有 30% 的交叉/汇入对能定出路权方；改写后能保留的对很少（242 对合法让行里，PET 2 s 只剩 18 对），因为 WOMD 片段只有 9.1 s；改写场景自己重判路权时，约 80% 与 log 一致（推迟的路权方补出的直线来路会被读成它的进口道）。
+- 下一步：在同样的场景集上跑 β_s / β_c（DenseTNT），检验 a_req 是否抓到了 β 抓不到的激进。
+
+### M3.6 框架能否判断激进（开环、事后）：以 CAT 对抗场景为标签的干预式检验
+> **状态：** 已完成 DenseTNT 部分和 SMART 的 CAT / mode / near 1 m 条件（2026-10-10 至 10-12，CAT 的 0–99 号场景），README "Can it judge aggression?" 有完整表格。脚本整理进 `scripts/responsibility/`（2026-10-14）：`run_aggression_test.sh`（条件场景、运行、离线表）、`evaluate_aggression.py`（论文流程）、`analyze_aggression_offline.py`、`aggression_hmm_schemes.py`、`probe_inertia.py` / `probe_courtesy.py` / `probe_smart.py`、`import_catk_obs.py`、`retime_agent.py`、`offline_safety_grid.py`、`plot_aggression.py`；共用代码在 `responsibility/aggression_test.py`。重跑与原输出逐项一致（SMART 所有场景共用一个带种子的随机流：同样的场景集合能逐位复现，只跑子集时逐帧值会变）。
+> - 论文设定（DenseTNT、逐帧、T_f = 2 s、HMM）：阴性对照 mode 0.52、强度单调通过；CAT 攻击者 HMM 判决 AUROC 0.72，10% 误报下检出 15%；攻击者 vs 受害者 0.59；timid 测不出；β_c 0.55–0.57。信号在 β_s（目标对 0.93），丢在对邻居取 max 和 HMM。
+> - 原因：β_s 是对称距离，分不清攻击者与受害者；2 s horizon 加历史惯性（碰撞前 0–1 s，攻击者 61% 的备选也进入 ego 3 m 内）；DenseTNT 对冲来的车几乎不反应（ego 预测进度 +0.07 m），所以 β_c 无效。motion set 和有效性过滤不是瓶颈（AUROC 变化 ≤ 0.012）。
+> - 有效的改动：只看目标对（0.80 → 0.94）；双向 rel（攻击者 vs 受害者 5 s 时 0.89）；以 logged q90 为阈值代替 HMM（CAT 场景 59%、logged 7–16%、受害者 10%）。
+> - SMART：检出率（10% 误报）51% → 86%，β_c 0.55 → 0.81，HMM 0.70 → 0.84；攻击者 vs 受害者 0.69。代价：约 5 倍算力、catk 独立环境、阈值需重标定、SDC 的 β_c 系统偏高（0.54 vs 0.06 nats）。
+- 下一步：SMART 补跑 fair-inf、max-gap；在 100–499 号场景上 held-out 复验；把 rel 写进 `compute_responsibility`，在 SMART 下比较 2 s 与 5 s；判决改用校准阈值或零膨胀 HMM；查清 SMART 的 SDC β_c 偏高。
+
+**风险：** DenseTNT 学的是人类驾驶。RL 策略的状态分布偏离数据太多时（例如极低速、贴路边），反事实样本本身不可靠。在论文里讨论这一点；同时统计每个窗口自车处于"数据分布内"的程度，例如自车 logged 历史在 DenseTNT 下的 goal 对数似然。
+
+---
+
+## 方向 1："可避免"的公平对抗场景
+
+**目标：** 只生成同时满足三个条件的对抗场景：对手的行为合理（β_adv ≤ τ）、会造成碰撞、自车存在可行的规避动作；并检验用这种场景训练，能否减少过度保守而不牺牲安全。
+
+### M1.1 自车可避免性：`responsibility/adversarial.py` 扩展（2 天，可离线开发）
+> **状态：** 已完成（`ego_avoidability`、`path_headings`，单元测试覆盖正面、切入、平行三种情形）。在前 20 个场景上：logged 对手的可避免性中位数 0.95，q10 0.61，最小 0.28；CAT 选中的对手平均只有 0.29，其中 30% 的场景是"不可避免的碰撞"（可避免性 < 0.1）。
+- `ego_avoidability(model, scene, candidates, n=40)`：
+  - 在第 10 步（CAT 生成对手的时刻）对自车做 DenseTNT 反事实采样，得到 n 条 8 s 轨迹；
+  - 对每个候选对手轨迹 j，计算自车样本中有多大比例全程不与它碰撞；
+  - 碰撞判定用 `geometry.collision_cost_matrix`（3 圆覆盖，torch 向量化），不用 CAT 逐帧的 Python 线段相交，否则 32 × 40 对太慢。
+- 语义："一个合理的人类司机在同样的历史下，有 avoid_j 的概率躲开这条对手轨迹。"它是开环计划意义上的可避免，不假设自车能对对手做出反应，所以是保守的估计。
+- **验收：** 单元测试（正面相撞的候选可避免性接近 0，侧后方切入的较高）；在 20 个场景上可避免性的分布合理。
+
+### M1.2 新选择规则 `fair`（1 天）
+> **状态：** 已完成。与计划的一处不同：F 为空时，不退回 `constrained`（那样仍可能选到不可避免的轨迹），而是在 β ≤ τ 的候选里取可避免性最高的；如果没有 β ≤ τ 的候选，就在全部候选里取。在前 20 个场景上，所有 (τ, ρ) 组合的不可避免碰撞都是 0%。碰撞率的代价：`fair@1,0.3` 是 25%，`constrained@1` 是 30%；`fair@2,0.3` 是 40%，`constrained@2` 是 50%。实验命名为 `cat_fair<τ>_<ρ>`。
+- 候选集 F = { j : β_adv,j ≤ τ 且 avoid_j ≥ ρ }。在 F 内取 CAT 碰撞分数最大者；F 内没有碰撞候选时，取 F 内最近接近者；F 为空时，按 `constrained` 的回退规则处理。
+- 新参数 `--resp_avoid`（ρ，默认 0.3），加进 `make_adv_generator` 和 `cat_RLtrain.py` 的实验命名（`cat_fair<τ>_<ρ>`）。
+- `benchmark_advgen.py` 增加可避免性列，和 `fair@τ,ρ` 规则。
+
+### M1.3 离线权衡分析（服务器上 0.5 天）
+> **状态：** 500 个场景已完成（2026-10-04，L4 机器）。网格是 τ ∈ {0.25, 0.5, 1, 2, ∞}，ρ ∈ {0.1, 0.3, 0.5}；τ = ∞ 就是"只约束可避免性"的消融。`cat` 规则在 500/500 个场景上与 CAT 原版一致。
+> - CAT 选中的对手：预测碰撞率 95%，平均 β +5.00 m，40% 的场景是不可避免的碰撞；logged 对手的 β q90 只有 +0.23 m，不可避免的只占 2%。
+> - 有限的 τ（≤ 2 m）都达不到 30% 的碰撞率：`fair` 最高是 25%（τ = 2，ρ = 0.1）；τ 取 logged q90 附近时，所有规则都只有 8–16%。
+> - 只约束可避免性（τ = ∞）：碰撞率 49–78%，不可避免的碰撞只有 0.4%（2 个场景里没有足够可避免的候选），但对手的 β 是 +3.4 到 +4.4 m，和 CAT 的对手一样不负责任。
+> - 汇总按规则推荐了 `fair@inf,0.5` 和 `fair@inf,0.3`，但它们是消融，不是原设计的公平对手。
+>
+> 结论：可避免性保证碰撞可解，β 保证对手像人一样开车。离线基准分不出训练到底需要哪一个，要靠 RL 实验回答。建议 RL 里同时训练 `fair@2,0.1`（负责任，碰撞率 25%）和 `fair@inf,0.5`（只保证可解，碰撞率 49%），两者都和 `cat` 比较。设置的最终选择待定。
+- 在 500 个场景上跑 `benchmark_advgen`，对 τ ∈ {0.25, 0.5, 1} 和 ρ ∈ {0.1, 0.3, 0.5} 扫参，画出"碰撞率 vs 对手 β vs 可避免性"的权衡曲线。
+- 选出 1–2 组 (τ, ρ) 进入 RL，标准是保留足够的攻击成功率，例如 ≥ 30%。
+
+### M1.4 🖥 RL 训练与交叉评测（服务器上约 1 周，主要是训练时间）
+> **状态：** 工具就绪，待在服务器上跑。
+> - 训练：runbook 第 8b 步，六组设置 × 3 个种子，包括 M2.3 的两组 `_share`。
+> - rollout：第 10a 步，每个模型在 `cat` 和 `fair` 两种测试对手下各采集一次，加上正常回合，得到 `none`、`cat`、`fair` 三种测试对手。
+> - 交叉评测表：第 10c 步 `comparison_seeds.md` 里的矩阵。
+- 训练设置：`replay`、`cat`、`cat_constrained<τ>`、`cat_fair<τ>_<ρ>`，各 3 个种子，1e6 步。
+- 交叉评测矩阵：训练设置 × 测试对手模式（`none`、`cat`、`fair`），用方向 3 的工具（M3.1–M3.3）评测，得到碰撞率、自车责任碰撞占比、完成率、激进/胆怯占比。
+- **核心假设：** `fair` 训练出的策略在 `none` 和 `fair` 测试上完成率更高、胆怯更少；在 `cat` 测试上碰撞率不明显变差，因为无解的碰撞本来就无法学会避免。
+
+**风险：** 可行候选太少会导致对抗信号不足。缓解方式：对 τ 做课程（先松后紧），或者按 CAT 的 `min_prob` 机制混合不同规则。
+
+---
+
+## 方向 2：按责任归因的碰撞惩罚
+
+**目标：** RL 训练中只按自车应负的责任比例惩罚碰撞，去掉"无法避免的碰撞"带来的错误学习信号。
+
+### M2.1 碰撞归因函数：`responsibility/blame.py`（1–2 天，可离线开发）
+> **RSS 基线（2026-10-04 完成）：** `responsibility/rss.py` 实现 RSS（Shalev-Shwartz et al. 2017）的归因：
+> - 先找危险阈值时刻 t_b（Def. 9）；再按纵向（Def. 4）或横向（Def. 8）的 proper response，检查双方的速度是否超出允许的包络，超出的一方负责；
+> - 车道方向取地图上最近的车道中心线；参数取 ad-rss-lib 的默认值，双方的响应时间都是 1 s；
+> - 只覆盖同向碰撞（追尾、切入、侧刮）；对向和交叉碰撞需要路权规则，给 `n/a`。
+>
+> 接入的地方：`crashes.csv` 的 `rss` 列；`compare_policies` 的 `RSS agree`、覆盖率和 RSS 判定的自车责任占比（另有矩阵）；`summarize_blame`。训练基线 `cat_RLtrain.py --blame_weighting rss`（实验名后缀 `_rss`）：RSS 判定对方单独负责时去掉惩罚，其余情况保留全部惩罚，不需要 DenseTNT。单元测试覆盖追尾、急刹（RSS 判前车，追尾规则判后车）、切入和双方都偏移。真实碰撞上的一致率待 M3.4。
+>
+> **状态：** 已完成。规则基线 `rear_end_rule`（追尾归后车）：两车朝向相差 < 30°，且对方位于自车的前方或后方（按两车半尺寸归一化后，纵向偏移大于横向偏移），才判定为追尾；其余情形不给判定。每条归因都带上规则的判定（`crashes.csv` 的 `rule` 列），`compare_policies` 输出两者都给出判定时的一致率（`rule agree`）和规则的覆盖率。真实碰撞上的一致率待 M3.4 的 rollout 结果。
+- `crash_blame(model, scene, ego, crash_step, other=None)`：
+  - 碰撞对象默认取碰撞时刻距离自车最近的车，有对手时取对手；
+  - 取窗口 k = crash_step − 20（不足时取能取到的最早窗口，至少为第 10 步）；
+  - 算 β_ego（自车对对方）和 β_other（对方对自车），两者都来自各自的 DenseTNT 样本，与对方的实际轨迹比较；
+  - 自车的责任份额 w = β_ego⁺ / (β_ego⁺ + β_other⁺)；两者都 ≤ 0 时取 w = 0.5（无法区分责任）。
+- **验收：** 合成场景的单元测试：自车被追尾时 w 接近 0，自车切入他车道时 w 接近 1；再在方向 3 基线评测的真实碰撞上，与简单规则（追尾归后车）比较一致率。
+
+### M2.2 🖥 训练集成：`cat_RLtrain.py --blame_weighting {none, share}`（2 天）
+> **状态：** 代码已完成（`responsibility/blame_reward.py`），用模拟训练环境的单元测试验证（`test_blame_reward.py`）。2026-10-04 在 L4 机器上的试点里跑满了 2e5 步：`cat_share` 和 `cat_fair2_0.1_share` 各归因约 1500–1600 次碰撞，没有一次失败，平均惩罚权重分别是 0.65 和 0.73。按计划的预期，前者主要是对方责任（w < 0.5）的碰撞更多：32% 对 23%。详见 runbook 9a。与计划有三处不同，都源于 CAT 训练环境的实际设置：
+> 1. 训练配置没有 `crash_vehicle_done`，碰撞**不会结束回合**。车辆接触期间的每一步，MetaDrive 都把奖励替换为 −`crash_vehicle_penalty`（默认 1）。所以加权的对象不是"终止 transition"，而是每次碰撞事件（与同一辆车连续接触的若干步）中所有被罚的步；每个事件在其第一步归因一次。
+> 2. 被罚步的奖励改为 w·(−P) + (1−w)·step_reward，而不是计划中的 r_T + (1−w)·P = −w·P。区别在于 w = 0 时，这一步保留被罚款替换掉的驾驶奖励（`info["step_reward"]`），等于"没有发生碰撞"。
+> 3. 风险缓解直接作为默认：只有判定为 `ego`/`other`（两侧差异 > `--blame_margin`，默认 0.1 m）时才用 w，否则 w = 1（保留全部惩罚）。因此 M2.1 中"两者都 ≤ 0 时 w = 0.5"在训练里不会用到。
+>
+> 实验名加后缀 `_share`（如 `cat_share`、`cat_fair1_0.3_share`），归因日志写到 `logs/blame/<名字>_s<seed>.csv`。
+- 一个回合的 transition 先暂存。回合结束时如果是碰撞，从 rollout 重建场景（复用 M3.2），算出 w，把终止 transition 的奖励改为 r_T + (1 − w) · crash_penalty，也就是只保留 w 比例的碰撞惩罚（`crash_penalty` 取 MetaDrive 配置里的 `crash_vehicle_penalty`），然后整批写入 replay buffer。
+- 每个碰撞回合只算一次（GPU 上约 1–2 s），不影响非碰撞回合，训练开销小。
+- 记录每个碰撞回合的 w，便于分析训练过程中归因的分布。
+
+### M2.3 🖥 实验（与方向 1 合并）
+> **状态：** 工具就绪，待在服务器上跑。
+> - 训练和评测与 M1.4 合并：runbook 第 8b、10 步。
+> - 训练中的归因：第 8d 步的 `summarize_blame`。它给出判定分布和平均惩罚权重、与追尾规则的一致率，以及 w 在训练过程中的变化。
+- 2×2 设置：对手 `cat`/`fair` × 碰撞惩罚 `none`/`share`，各 3 个种子；评测同 M1.4。
+- 单独看方向 2 的作用：`cat + share` 对比 `cat`。预期完成率提高、胆怯减少，自车责任碰撞不增加。
+
+**风险：** 归因噪声会变成奖励噪声。缓解方式：w 只在 β 差异明显时生效，否则取 1（保留全部惩罚）；并检查归因与规则基线的一致率。
+
+---
+
+## 时间线（估计）
+
+| 周 | 内容 |
+|---|---|
+| 1 | M3.0–M3.2（服务器上调试 rollout 采集）；并行离线开发 M3.3、M1.1、M2.1 |
+| 2 | M3.4 基线评测；M1.2–M1.3 离线权衡 |
+| 3–4 | M1.4 和 M2.2–M2.3 训练（可以一起跑 2×2 设置 × 3 个种子），评测，写结果 |
+
+每个里程碑单独 commit，并补单元测试；需要 MetaDrive 的部分，在服务器上用 `replay` 策略做一致性验收。
+
+## 相关工作（写论文前需要查新）
+
+AdvSim（Wang et al., CVPR 2021）、KING（Hanselmann et al., ECCV 2022）、STRIVE（Rempe et al., CVPR 2022；用规划器检查场景是否可解，和方向 1 最接近，需要仔细区分）、CAT（Zhang et al., CoRL 2023）、RSS（Shalev-Shwartz et al., 2017；规则化的责任定义，是方向 2、3 的天然基线）、Hsu et al.（IROS 2023）。

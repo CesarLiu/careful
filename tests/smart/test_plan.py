@@ -1,0 +1,138 @@
+"""Window-level planning: which rollouts responsibility needs, shared and packed."""
+
+import torch
+
+from tests.smart.conftest import FakeSMART
+from tests.smart.test_windows import NUM_HIST, _Data
+
+from responsibility.predictors.smart.native.metrics import (
+    ResponsibilityConfig,
+    compute_agent_responsibility,
+    plan_responsibility_jobs,
+    responsibility_for_agents,
+)
+from responsibility.predictors.smart.native.motion_set import MotionSetSynthesizer
+
+
+def _cfg(**kw):
+    base = dict(num_historical_steps=NUM_HIST, n_safety_samples=6, n_courtesy_samples=4)
+    base.update(kw)
+    return ResponsibilityConfig(**base)
+
+
+def test_full_scene_rollouts_are_shared_between_safety_and_courtesy():
+    # agents drive in a line 10 m apart: every adjacent pair interacts
+    data, cfg = _Data(n_agent=2), _cfg()
+    plan = plan_responsibility_jobs(data, queried=[0, 1], neighbors_of={0: [1], 1: [0]}, cfg=cfg)
+
+    # one full-scene job per agent (sized for its larger use) + one "b without a" per pair
+    assert set(plan.full_job) == {0, 1}
+    assert set(plan.without_job) == {(0, 1), (1, 0)}
+    assert len(plan.jobs) == 4
+    for agent, j in plan.full_job.items():
+        assert plan.jobs[j].free == (agent,) and plan.jobs[j].removed == ()
+        assert plan.jobs[j].n_samples == max(cfg.n_safety_samples, cfg.n_courtesy_samples)
+    for (a, b), j in plan.without_job.items():
+        assert plan.jobs[j].free == (b,) and plan.jobs[j].removed == (a,)
+
+    # unshared: 2 safety jobs + 2 x (with, without) courtesy jobs
+    unshared = 2 * cfg.n_safety_samples + 2 * 2 * cfg.n_courtesy_samples
+    assert plan.n_rollouts < unshared
+
+
+def test_far_pairs_get_no_courtesy_rollouts():
+    data = _Data(n_agent=3)  # agents 0 and 2 are 20 m apart
+    cfg = _cfg(courtesy_skip_distance=15.0)
+    plan = plan_responsibility_jobs(data, queried=[0], neighbors_of={0: [1, 2]}, cfg=cfg)
+
+    assert plan.courtesy_targets[0] == [1]
+    assert (0, 2) not in plan.without_job
+    assert 2 not in plan.full_job
+
+
+def test_agents_without_neighbours_cost_nothing():
+    data, cfg = _Data(n_agent=2), _cfg()
+    plan = plan_responsibility_jobs(data, queried=[0], neighbors_of={0: []}, cfg=cfg)
+    assert plan.jobs == [] and plan.n_rollouts == 0
+
+
+def test_window_results_cover_every_queried_agent(sampling_scheme):
+    data, cfg = _Data(n_agent=3), _cfg(courtesy_skip_distance=15.0)
+    model = FakeSMART(n_agent=3)
+    synth = MotionSetSynthesizer(model, sampling_scheme, rollout_batch_size=64)
+    tok_map, tok_agent = synth.tokenize(data)
+
+    results, plan = responsibility_for_agents(
+        synth, data, tok_map, tok_agent,
+        queried=[0, 1, 2], neighbors_of={0: [1, 2], 1: [0, 2], 2: [0, 1]},
+        all_agent_indices=[0, 1, 2], cfg=cfg,
+    )
+
+    assert set(results) == {0, 1, 2}
+    for a, r in results.items():
+        assert r["beta"].shape == (2,)
+        assert torch.isfinite(r["beta"]).all()
+        assert r["beta"][1] >= 0
+        assert set(r["courtesy"]["per_neighbor"]) == {b for b in (0, 1, 2) if b != a}
+    # skipped pair (0, 2) reports exactly zero courtesy
+    assert results[0]["courtesy"]["per_neighbor"][2].item() == 0.0
+    # everything fits in one packed call at this batch size
+    assert len(model.encoder.seen_n_agent) == 1
+    assert model.encoder.seen_n_agent[0] == plan.n_rollouts * 3
+
+
+def test_single_agent_wrapper_goes_through_the_planner(sampling_scheme):
+    data, cfg = _Data(n_agent=2), _cfg()
+    synth = MotionSetSynthesizer(FakeSMART(n_agent=2), sampling_scheme, rollout_batch_size=64)
+    tok_map, tok_agent = synth.tokenize(data)
+
+    r = compute_agent_responsibility(synth, data, tok_map, tok_agent, 0, [1], [0, 1], cfg)
+
+    assert r["beta"].shape == (2,)
+    assert set(r["safety"]["per_neighbor"]) == {1}
+
+
+def _details_pass(synth, data, cfg, keep_details, seed=0):
+    torch.manual_seed(seed)
+    tok_map, tok_agent = synth.tokenize(data)
+    results, _ = responsibility_for_agents(
+        synth, data, tok_map, tok_agent,
+        queried=[0, 1], neighbors_of={0: [1], 1: [0]},
+        all_agent_indices=[0, 1], cfg=cfg, keep_details=keep_details,
+    )
+    return results
+
+
+def test_details_are_the_samples_beta_was_computed_from(sampling_scheme):
+    from responsibility.predictors.smart.native.metrics import _boltzmann_kl
+
+    data, cfg = _Data(n_agent=2), _cfg()
+    synth = MotionSetSynthesizer(FakeSMART(n_agent=2), sampling_scheme, rollout_batch_size=64)
+    plain = _details_pass(synth, data, cfg, keep_details=False)
+    detailed = _details_pass(synth, data, cfg, keep_details=True)
+
+    for a in (0, 1):
+        assert "details" not in plain[a]
+        # asking for the details does not change the numbers
+        assert torch.equal(plain[a]["beta"], detailed[a]["beta"])
+        d = detailed[a]["details"]
+        assert d["safety"]["samples"].shape[0] == cfg.n_safety_samples
+        assert d["safety"]["log_prob"].shape == (cfg.n_safety_samples,)
+        assert len(d["safety"]["kept"]) == cfg.n_safety_samples  # no filter configured
+        b = 1 - a
+        pair = d["courtesy"][b]
+        assert pair["kind"] == "boltzmann"
+        assert pair["plans"].shape[0] == 2 * cfg.n_courtesy_samples
+        assert torch.allclose(_boltzmann_kl(pair), detailed[a]["courtesy"]["per_neighbor"][b])
+
+
+def test_exact_details_average_to_beta_c(full_sampling_scheme):
+    data, cfg = _Data(n_agent=2), _cfg(courtesy_estimator="exact")
+    synth = MotionSetSynthesizer(FakeSMART(n_agent=2), full_sampling_scheme, rollout_batch_size=64)
+    detailed = _details_pass(synth, data, cfg, keep_details=True)
+
+    for a, b in ((0, 1), (1, 0)):
+        pair = detailed[a]["details"]["courtesy"][b]
+        assert pair["kind"] == "exact"
+        assert pair["plans"].shape[0] == pair["per_sample"].shape[0] == cfg.n_courtesy_samples
+        assert torch.allclose(pair["per_sample"].mean(), detailed[a]["courtesy"]["per_neighbor"][b])
