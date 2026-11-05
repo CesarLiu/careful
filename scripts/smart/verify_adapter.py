@@ -9,8 +9,11 @@ ends with ALL CHECKS PASSED.
      --start-tol m of its logged position at k + 1
   3. the same generator gives the same samples; another gives other ones
   4. removing a neighbour changes the free agent's token log-probabilities
-     (the neighbour is in the attention graph at k), and removing a far
-     agent that is not in the batch changes nothing
+     by more than the run-to-run noise (the neighbour is in the attention
+     graph at k), and removing an agent not observed at k removes no row
+     and changes them by no more than that noise. The noise is measured by
+     repeating a pass with the same seed: on a GPU, CUDA's atomic additions
+     make identical passes differ in the last bits (on CPU it is 0)
   5. rollouts stop where the log does (8 s from 1.0 s, 7 s from 2.0 s)
   6. responsibility_at runs and gives finite beta_s, beta_c
 
@@ -109,6 +112,10 @@ def main(argv=None):
         _, lp2, trajs2 = predictor.sample(dist, args.samples, torch.Generator().manual_seed(0))
         _, _, trajs3 = predictor.sample(dist, args.samples, torch.Generator().manual_seed(1))
         check("3 reproducible from the generator", np.array_equal(trajs, trajs2) and not np.array_equal(trajs, trajs3))
+        # run-to-run noise of the token log-probabilities: CUDA's atomic additions (PyG's attention
+        # aggregation) make two identical passes differ in the last bits; on CPU this is 0
+        noise = float((lp - lp2).abs().max())
+        tol = max(10.0 * noise, 1e-5)
 
         horizon = 20
         nbrs = interacting_neighbours(scene, a, k, horizon, ResponsibilityConfig().interaction)
@@ -118,13 +125,19 @@ def main(argv=None):
             b = min(others, key=lambda i: np.linalg.norm(scene.position[i, k, :2] - scene.position[a, k, :2]))
         _, lp_wo, _ = predictor.sample(predictor.distribution(scene, k, a, excluded=(b,)), args.samples,
                                        torch.Generator().manual_seed(0))
-        check("4 removing a neighbour changes the free agent's odds", not torch.allclose(lp, lp_wo),
-              f"mean log p {float(lp.mean()):.3f} -> {float(lp_wo.mean()):.3f}")
+        shift = float((lp - lp_wo).abs().max())
+        check("4 removing a neighbour changes the free agent's odds", shift > tol,
+              f"mean log p {float(lp.mean()):.3f} -> {float(lp_wo.mean()):.3f}, max change {shift:.2e} "
+              f"(run-to-run noise {noise:.1e})")
         absent = [i for i in range(scene.n_agents) if not scene.valid[i, k]]
         if absent:
-            _, lp_abs, _ = predictor.sample(predictor.distribution(scene, k, a, excluded=(absent[0],)),
-                                            args.samples, torch.Generator().manual_seed(0))
-            check("4 removing an absent agent changes nothing", torch.equal(lp, lp_abs))
+            gone = predictor.distribution(scene, k, a, excluded=(absent[0],))
+            _, lp_abs, _ = predictor.sample(gone, args.samples, torch.Generator().manual_seed(0))
+            diff = float((lp - lp_abs).abs().max())
+            # an agent not observed at k is not in the batch, so nothing is removed: the same job, the
+            # same samples up to the run-to-run noise
+            check("4 removing an absent agent changes nothing", gone.removed_rows == () and diff <= tol,
+                  f"rows removed {list(gone.removed_rows)}, max log p change {diff:.2e} (tolerance {tol:.1e})")
 
         lens = {kk: predictor.sample(predictor.distribution(scene, kk, a), 1)[2].shape[1]
                 for kk in (10, 20) if scene.valid[a, kk]}
