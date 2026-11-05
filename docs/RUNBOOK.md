@@ -1,11 +1,16 @@
 # 服务器 runbook：合并后的 `careful` 仓库
 
-这份 runbook 用来在 GPU 服务器上确认：合并（catspond `gpudrive-ppo` + catk4test）没有改变已有结果，新的预测器接口在真实检查点和真实场景上能用。全部做完约半天。
+这份 runbook 用来在 GPU 服务器上做两件事：
+- 确认合并（catspond `gpudrive-ppo` + catk4test）没有改变已有结果，新的预测器接口在真实检查点和真实场景上能用（第 2–6 步，约半天）；
+- 在 CAT 的 500 个场景上，不用 MetaDrive 训练 TD3（第 7 步）。
 
-- 原来的长实验命令还在各自的 runbook 里，在新仓库里同样可用：
-  - DenseTNT / MetaDrive / RL：`responsibility/RUNBOOK_H200.md`
-  - SMART：`responsibility/CATK_H200.md`、`docs/smart/RUNBOOK.md`（脚本路径已从 `scripts/responsibility/` 改成 `scripts/smart/`）
-- 本文只写新增的核对步骤。
+**全部只用 CAT-K 的 Python 3.11 环境**（`~/venvs/catk`）。MetaDrive 不支持 Python 3.11，所以训练改在纯 torch 的日志回放仿真器上进行（`rl/sim.py`）。
+
+- 原来的长实验命令还在各自的 runbook 里：
+  - 指标计算：`responsibility/RUNBOOK_H200.md`，命令在 catk 环境里同样可用；
+  - 它的第 7–8 步（MetaDrive 闭环、`cat_RLtrain.py`）需要 Python 3.9，已由本文第 7 步代替；
+  - SMART：`responsibility/CATK_H200.md`、`docs/smart/RUNBOOK.md`（脚本路径已从 `scripts/responsibility/` 改成 `scripts/smart/`）。
+- 本文只写新增的步骤。
 
 带 ⏱ 的时间是按 `SMART_PLAN.md` S3 的吞吐量（500 个场景约 10 小时，每次模型调用 32 份场景副本）推算的估计，没有实测过。
 
@@ -21,7 +26,7 @@ cd ~/careful
 ```bash
 ln -s ~/catspond/raw_scenes_500 raw_scenes_500
 ln -s ~/catspond/advgen/pretrained advgen/pretrained   # densetnt.bin
-ln -s ~/catspond/metadrive metadrive                   # 只有 MetaDrive 闭环、UniTraj 的输入构造需要
+ln -s ~/catspond/metadrive metadrive                   # 只有 UniTraj 需要：它从这里读 metadrive/type.py（纯 Python，不导入 MetaDrive）
 export CATK_ROOT=~/catk                                # 带 src/smart、configs/、ckpts/ 的 CAT-K checkout
 export UNITRAJ_ROOT=~/UniTraj                          # 只有 MTR / UniTraj 需要
 ```
@@ -35,45 +40,49 @@ ls $CATK_ROOT/ckpts/                       # clsft_E9.ckpt、pre_bc_E31.ckpt
 ls $CATK_ROOT/src/smart/tokens/*.pkl       # 3 个 token 文件（真实文件，不是 LFS 指针）
 ```
 
-## 1. 环境：沿用原来的两个
+## 1. 环境：只用 catk（约 10 分钟）
 
-新仓库不需要新环境：
+在 CAT-K 已经装好的环境（`install/setup_server.sh`）里补上这个仓库需要的东西：
 
-| 环境 | 用于 | 来源 |
-|---|---|---|
-| `~/venvs/cat39`（Python 3.9） | DenseTNT、`scripts/responsibility/*`、MetaDrive TD3 | catspond 的 `scripts/responsibility/setup_env.sh` |
-| `~/venvs/catk`（Python 3.11） | SMART、`scripts/smart/*`、`--model smart` | CAT-K 的 `install/setup_server.sh` |
+```bash
+source ~/venvs/catk/bin/activate
+bash scripts/setup_catk_env.sh
+```
 
-`advgen/utils_cython.cpython-39-*.so` 已在 git 里。在别的 Python 版本下用 DenseTNT，要先运行 `python scripts/responsibility/build_cython.py`。
+脚本做了这些事：
+- 装 `cython<3`，然后为 Python 3.11 编译 `advgen/utils_cython`（git 里只有 3.9 的版本），DenseTNT 的输入构造要用它；
+- 装 UniTraj 要用的 h5py、einops、pytorch_lightning（`WITH_UNITRAJ=0` 可以跳过）；
+- 打印关键包的版本，跑一遍单元测试。
+
+不需要 MetaDrive，也不会安装它。
 
 ## 2. 单元测试（约 2 分钟）
 
-```bash
-source ~/venvs/cat39/bin/activate && python -m pytest tests -q
-```
-
-cat39 里没有 omegaconf 时，`tests/smart` 整个目录会被跳过（`tests/smart/conftest.py`），不会报错。它在 catk 环境里跑：
+`setup_catk_env.sh` 最后已经跑过一次。之后单独跑：
 
 ```bash
-source ~/venvs/catk/bin/activate && python -m pytest tests/smart tests/responsibility/test_predictors.py -q
+python -m pytest tests -q
 ```
 
-本机（Python 3.11，torch 2.4.1 CPU，PyG 2.6.1，TensorFlow 2.15）上，`pytest tests` 的结果是 428 passed、3 skipped，跳过的那 3 个需要 UniTraj、WOMD protos 或 MetaDrive；去掉 omegaconf 时是 219 passed、3 skipped（`tests/smart` 被跳过）。
+本机（Python 3.11，torch 2.4.1 CPU，PyG 2.6.1，torch_cluster 1.6.3，TensorFlow 2.15）上的结果是 451 passed、3 skipped。跳过的那 3 个需要 UniTraj、WOMD protos 或 MetaDrive。
+
+服务器上的 catk 环境是 TensorFlow 2.12、numpy < 1.24，和本机不同。测试数如果不一样，把失败的输出发回来。
 
 ## 3. DenseTNT：结果不变（约 20 分钟，GPU）
 
 ### 3a. 复现 CAT 的输入和候选
 
 ```bash
-source ~/venvs/cat39/bin/activate
 python -m scripts.responsibility.verify_densetnt --n 5 --device cuda
 ```
 
-验收：末尾是 `ALL CHECKS PASSED`，和合并前一样。合并前在 3 个场景上，32 条对手轨迹的误差是 3.6e-12 m。
+验收：末尾是 `ALL CHECKS PASSED`，和合并前一样。合并前在 cat39（Python 3.9）里，3 个场景上 32 条对手轨迹的误差是 3.6e-12 m。
+
+这一步也是在确认 DenseTNT 换到 Python 3.11 和 3.11 版的 Cython 模块之后结果不变，这件事还没有在真实检查点上验证过。
 
 ### 3b. 逐窗口复现旧运行
 
-用 `RUNBOOK_H200.md` 第 3 步的运行（`run_h200.sh` 的默认设置）。新仓库重算前 5 个场景，和旧的 `windows.csv` 逐窗口比较：
+用 `RUNBOOK_H200.md` 第 3 步在 cat39 里算出的运行（`run_h200.sh` 的默认设置）。在 catk 环境里重算前 5 个场景，和旧的 `windows.csv` 逐窗口比较：
 
 ```bash
 for a in sdc adv; do
@@ -165,23 +174,19 @@ python -m scripts.smart.compare_adapter_native --ckpt $CATK_ROOT/ckpts/clsft_E9.
 
 ```bash
 # 运动学下界：不需要 GPU 和模型，500 个场景约 1 小时（估计）
-source ~/venvs/cat39/bin/activate
 MODEL=constant_velocity OUT=logs/responsibility/cv AGENTS="sdc adv" SHARDS=16 bash scripts/responsibility/run_h200.sh
 
 # SMART 走通用路径，设置与 DenseTNT 的主实验相同（第 3 步）
-source ~/venvs/catk/bin/activate
 MODEL=smart CHECKPOINT=$CATK_ROOT/ckpts/clsft_E9.ckpt OUT=logs/responsibility/smart AGENTS="sdc adv" SHARDS=8 \
     bash scripts/responsibility/run_h200.sh
 
 # 两两对照
-source ~/venvs/cat39/bin/activate
 for m in cv smart; do for a in sdc adv; do
   python -m scripts.responsibility.compare_models --runs logs/responsibility/$a logs/responsibility/$m/$a \
       --labels DenseTNT $m --out-dir logs/compare/densetnt_vs_${m}_$a
 done; done
 ```
 
-- `run_h200.sh` 里的 `python` 是当前激活的环境，所以 SMART 那一行要在 catk 环境里运行。
 - SMART 走通用路径时每个邻车单独调用模型，比原生管线的打包推演慢。先用 `N=5` 量一下速度。
 
 UniTraj 的任一方法（有检查点时）：
@@ -191,11 +196,89 @@ MODEL=unitraj CHECKPOINT=ckpts/wayformer.ckpt EXTRA="--unitraj-method wayformer"
     bash scripts/responsibility/run_h200.sh
 ```
 
-## 7. 回传的结果
+## 7. 在 500 个场景上训练 TD3，不用 MetaDrive
+
+训练在 `rl/sim.py` 上进行：纯 torch 的批量日志回放仿真器，按 CAT 的设置来。
+
+| 保留 CAT 的 | 替换掉的 |
+|---|---|
+| 场景 0–399 训练、400–499 测试；其他车按日志回放；对手按 CAT 选出的计划行驶（晚一步） | MetaDrive 的车辆物理换成运动学自行车模型（加速度 −6…4 m/s²，曲率 ±0.3 1/m） |
+| 对抗回合的比例随训练增长，`min_prob` 0.1 | lidar 换成自车坐标系下的向量观测：自车状态、前方路线、到路沿和黄线的射线距离、最近 16 辆车，共 209 维 |
+| MetaDrive 的奖励：沿路线的进度，到达 +10，出界 −10，每接触一步 −1 | 碰撞用全尺寸矩形检测 |
+| 终止条件：偏离路线 10 m、压路沿或实黄线算出界；碰撞只在评测时结束回合 | |
+| TD3 的网络和超参数，每个 transition 更新一次 | |
+
+结果因此不能和 MetaDrive 上的数字直接比较。
+
+### 7a. 场景库和对手候选（⏱ 候选要每个场景跑一次 DenseTNT，先用 `--n 5` 量速度）
+
+```bash
+mkdir -p logs/rl
+python -m scripts.rl.build_scenes --scenes raw_scenes_500 --out logs/rl/scenes.npz
+python -m scripts.rl.precompute_candidates --scenes raw_scenes_500 --out logs/rl/candidates.npz --device cuda
+```
+
+- `build_scenes` 是纯 numpy，几分钟就完。末尾打印每个场景的 agent 数、路沿和黄线的线段数、路线长度。
+- `precompute_candidates` 在每个场景上跑一次 CAT 的 DenseTNT。它算出对手的 32 条候选、fair 规则要用的对手样本，以及自车对每条候选的可避免性。
+- `--resp_model` 可以让另一个预测器给出样本和可避免性，它需要给出 8 s 的未来。
+
+### 7b. 核对仿真器（约 5 分钟）
+
+```bash
+python -m scripts.rl.check_sim --bank logs/rl/scenes.npz --candidates logs/rl/candidates.npz --device cuda --worlds 100
+```
+
+验收：末尾是 `ALL CHECKS PASSED`。
+
+| 检查 | 内容 | 本机（8 个合成场景）的值 |
+|---|---|---|
+| 1 | 用自行车模型的逆解（不截断）回放日志，每个场景的最大误差的中位数小于 5 cm | 0.000 m |
+| 2 | 动作截断到 [−1, 1] 后，九成以上场景的日志回放以到达或超时结束 | 8/8 到达 |
+| 3 | 不放对手时，回放日志几乎不碰撞（≤ 10% 的场景） | 3/8：碰撞出现在合成数据本身（随机生成的同车道车辆在日志里就相撞），不是仿真器的问题 |
+| 4 | 选出 CAT 的对手；对手晚一步、准确地在计划轨迹上 | 误差 0.00 m |
+| 5 | 吞吐量 | CPU 上 8 个世界每秒 1,183 步 |
+
+检查 2 或 3 在真实场景上不通过，说明路线、路沿或黄线的构建有问题，或者车辆尺寸有问题。脚本会打印出界的场景号，把输出发回来。
+
+### 7c. 试点训练（估计约 10 分钟）
+
+```bash
+python -m scripts.rl.train_td3 --bank logs/rl/scenes.npz --candidates logs/rl/candidates.npz --mode cat \
+    --max-timesteps 50000 --eval-freq 25000 --out logs/rl/pilot --device cuda
+```
+
+- 看末尾的耗时：本机 CPU 上，每 1 万个 transition（连同每个 transition 一次 TD3 更新）约 1.4 分钟，1M 步约 2.5 小时。GPU 上没有测过。
+- `logs/rl/pilot/progress.csv` 是 CAT 记录的指标：测试场景上正常和对抗回合的路线完成度、碰撞率，另加到达率和出界率。
+
+### 7d. 正式训练 ⏱（每个 1M 步）
+
+CAT 的三种设置各跑 3 个种子，可选再加按责任加权的碰撞惩罚：
+
+```bash
+B="--bank logs/rl/scenes.npz --candidates logs/rl/candidates.npz --device cuda --save-model"
+for s in 0 1 2; do
+  python -m scripts.rl.train_td3 $B --mode replay --seed $s --out logs/rl/runs/replay_s$s
+  python -m scripts.rl.train_td3 $B --mode cat --seed $s --out logs/rl/runs/cat_s$s
+  python -m scripts.rl.train_td3 $B --mode cat --adv-rule fair --resp-threshold 2 --resp-avoid 0.1 --seed $s \
+      --out logs/rl/runs/cat_fair2_0.1_s$s
+  # 可选：碰撞惩罚按反事实责任加权（DenseTNT；--blame-model smart --blame-checkpoint ... 换成 SMART），或按 RSS
+  python -m scripts.rl.train_td3 $B --mode cat --blame-weighting share --seed $s --out logs/rl/runs/cat_share_s$s
+  python -m scripts.rl.train_td3 $B --mode cat --blame-weighting rss --seed $s --out logs/rl/runs/cat_rss_s$s
+done
+python -m scripts.rl.summarize_runs logs/rl/runs/* --out logs/rl/summary.md
+```
+
+- 多块 GPU 时，把每个命令放到单独的 tmux 窗口里，加上 `CUDA_VISIBLE_DEVICES=<i>`。
+- `--blame-weighting` 的每次碰撞归因都写进 `OUT/blame.csv`，RSS 和路权的判定也一起记下。`share` 在每个碰撞事件的第一步调用一次预测器，训练早期碰撞多，会慢一些。
+- `summarize_runs` 按设置（去掉 `_s<seed>` 后的目录名）汇总：取每个运行最后 4 次评测的均值，再算种子间的均值 ± 标准差。
+
+## 8. 回传的结果
 
 把下面这些发回来，我据此更新 `SMART_PLAN.md`、`RESEARCH_PLAN.md` 的状态块和 README 里的实测数字：
 
+- 第 2 步的测试结果；
 - 第 3a、3b 步的末尾几行（`ALL CHECKS PASSED`，两个 `IDENTICAL`）；
 - 第 4 步的完整输出；
 - 第 5 步的 `logs/smart/compare_adapter_native/summary.md`；
-- 第 6 步做了的话，`logs/compare/*/` 里的 summary。
+- 第 6 步做了的话，`logs/compare/*/` 里的 summary；
+- 第 7b 步的完整输出，第 7c 步的耗时和 `progress.csv`，第 7d 步的 `logs/rl/summary.md`。

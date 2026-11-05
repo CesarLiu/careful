@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this repository is
 
-Counterfactual responsibility (Hsu et al., IROS 2023) for driving, independent of the motion predictor. It merges two implementations that differed only in the predictor: `CesarLiu/catspond` (branch `gpudrive-ppo`: CAT's DenseTNT and UniTraj's MTR, with CAT's TD3 training in MetaDrive; its GPUDrive PPO port, `gpucat/`, is not on this branch) and `CesarLiu/catk4test` (CAT-K's SMART). `README.md` describes the layout, the predictor interface and the two RL training loops (MetaDrive TD3, SMART reward fine-tuning). The metrics are used for three things:
+Counterfactual responsibility (Hsu et al., IROS 2023) for driving, independent of the motion predictor. It merges two implementations that differed only in the predictor: `CesarLiu/catspond` (branch `gpudrive-ppo`: CAT's DenseTNT and UniTraj's MTR, with CAT's TD3 training in MetaDrive; its GPUDrive PPO port, `gpucat/`, is not on this branch) and `CesarLiu/catk4test` (CAT-K's SMART). `README.md` describes the layout, the predictor interface and the two RL training loops (CAT's TD3 on the MetaDrive-free log-replay simulator `rl/`, SMART reward fine-tuning). Everything runs in CAT-K's Python 3.11 environment; MetaDrive (no Python 3.11 support) and GPUDrive are not used. The metrics are used for three things:
 
 - measuring how aggressively or timidly a driver behaves;
 - constraining CAT's adversary to "fair" (responsible and avoidable) trajectories;
@@ -21,11 +21,10 @@ When you finish a milestone, update its status block and the README in the same 
 
 ## Environment and commands
 
-Python **3.9** is required: `advgen/utils_cython.cpython-39-x86_64-linux-gnu.so` is prebuilt for it. To use another Python version, rebuild it with `python scripts/responsibility/build_cython.py` (needs `cython>=0.29.34,<3`). There is no lint or format config.
+One environment: CAT-K's Python 3.11 (`~/venvs/catk`, CAT-K's `install/setup_server.sh`), prepared by `bash scripts/setup_catk_env.sh` (adds `cython<3`, builds `advgen/utils_cython` for 3.11 -- git holds only the 3.9 build --, adds UniTraj's h5py/einops/pytorch_lightning, runs the tests). There is no lint or format config.
 
 ```bash
-bash scripts/responsibility/setup_env.sh && source ~/venvs/cat39/bin/activate   # uv venv; BACKEND=conda also works
-# minimal CPU env for the tests: torch 2.4.1 (cpu), tensorflow-cpu==2.12.0, "numpy<1.24", scipy, matplotlib, pyyaml, tqdm, pytest
+source ~/venvs/catk/bin/activate && bash scripts/setup_catk_env.sh
 
 python -m pytest tests -q                                                 # all tests; no model, data or GPU needed
 python -m pytest tests/responsibility/test_blame.py -q                    # one file
@@ -46,7 +45,15 @@ Several things are not in git and are usually **absent on a dev machine**:
 - more scenes: `scripts/responsibility/convert_womd_split.py` converts a whole WOMD split (the L4 server has v1.2.1 shards in `~/womd_v1_2_1/`) into CAT's scene format with CAT's own converter, plus an `index.csv` (`sdc_in_ooi`, `in_cat`). The open-loop tools read these scenes. The closed loop (MetaDrive, `advgen`) also runs them, given a folder of `sdc_in_ooi` scenes numbered `0.pkl` …;
 - produced on the server: `logs/` (gitignored) and `rollouts/` (not ignored, so don't commit it).
 
-Anything that needs MetaDrive (`cat_RLtrain.py`, `cat_advgen.py`, `collect_rollouts.py`; the plans mark these 🖥) can only run on the GPU server. Develop it against the stand-ins in the tests, and leave the server steps to the runbook.
+Anything that needs MetaDrive (`cat_RLtrain.py`, `cat_advgen.py`, `collect_rollouts.py`; the plans mark these 🖥) is legacy: it needs Python 3.9 and is not part of the CAT-K environment. Training is `scripts/rl/train_td3.py` on `rl/sim.py`; GPU and data steps are in `docs/RUNBOOK.md`.
+
+## RL training (rl/)
+
+- `rl/scenes.py` turns CAT's scene files into padded tensors (`scripts/rl/build_scenes.py` → `.npz`, `SceneBank`): slots SDC, adversary, others by distance at step 10, static vehicles left out (CAT's no_static_vehicles); the SDC's route extended 100 m, road edges and solid yellow lines within 20 m of it.
+- `rl/sim.py` (`LogReplaySim`) steps W worlds in torch: a kinematic bicycle SDC, every other slot at its logged state, the adversary on its plan a step late (`adversary_lag`); MetaDrive's reward and termination (`crash_done` False in training, True in evaluation); a 209-value observation in the SDC's frame. `expert_action` is the bicycle's exact inverse (replays the log; `scripts/rl/check_sim.py`). `before_reset` is a hook that may rewrite the step's rewards before auto-reset (`rl/blame.py` uses it).
+- `rl/adversary.py` is CAT's candidate scoring and the fair rule batched in torch (from gpucat on main), checked against CAT's numpy code in `tests/rl_training/test_adversary.py`; candidates come from `scripts/rl/precompute_candidates.py` (DenseTNT, `--resp_model` for the fair rule's motion sets).
+- `rl/td3.py` is saferl_algo's TD3 with a device replay buffer; `scripts/rl/train_td3.py` is cat_RLtrain.py's loop (schedule, evaluation rounds, CSV logs); `rl/blame.py` weights crash penalties per contact event with blame_reward.py's rule, from a rollout record the simulator builds (no MetaDrive `Recorder`).
+- Tests live in `tests/rl_training/` (a `tests/rl` package would shadow `rl/` on pytest's sys.path).
 
 ## Architecture (responsibility/)
 
@@ -79,14 +86,14 @@ The pipeline is: scene → motion model → metrics → per-run outputs → summ
 - **Valid counterfactuals** (`motion_filter.py`) filter the motion set before β_s. Same intent is judged by HD lane topology (`--lane-route`, `lanes.py`) or, for maps built by perception that have no topology, from the trajectories' heading and lateral offset, optionally plus road edges (`--intent`, `intent.py`). On such maps the drivable area is judged by road edges (`--drivable-edges`, `edges.py`) instead of lane centrelines.
 - **Collision attribution**: `blame.py` is the counterfactual verdict. It has three baselines: the rear-end rule (in `blame.py`), RSS (`rss.py`, geometry only, same-direction collisions) and the right of way (`right_of_way.py`: California Vehicle Code rules from the lane graph, lights and stop signs; duties written in the numpy STL of `stl.py`; crossing and turning collisions, same-direction ones are RSS's unless `same_direction_rules`). All four verdicts go into `crashes.csv` and the training logs; `scripts/responsibility/attribute_rules.py` recomputes the rule-based ones in an existing run.
 - **Forced yields** (`forced_yield.py`): open loop, the braking an agent's entry into a conflict demands of a holder of the right of way (assertive but not unsafe). Its ground truth is `make_go_first.py` (logged lawful yields rewritten so that the yielder goes first); `evaluate_forced_yield.py` scores it.
-- **Policies**: `recording.py` turns a MetaDrive episode into a rollout. It touches the env only through the attributes it reads, so the tests use stand-ins. `rollouts.scene_from_rollout` rebuilds the scene from it. `compute_responsibility --rollouts` measures the ego in that scene and attributes its crashes (`blame.py` → `crashes.csv`). Compare policies against `--policy replay` rollouts, not the plain logged run, because MetaDrive drops static vehicles.
+- **Policies**: `recording.py` turns a MetaDrive episode into a rollout (`rl/blame.py` builds the same record from the log-replay simulator). It touches the env only through the attributes it reads, so the tests use stand-ins. `rollouts.scene_from_rollout` rebuilds the scene from it. `compute_responsibility --rollouts` measures the ego in that scene and attributes its crashes (`blame.py` → `crashes.csv`). Compare policies against `--policy replay` rollouts, not the plain logged run, because MetaDrive drops static vehicles.
 - **Hooks into CAT**:
   - `adversarial.make_adv_generator(parser)` adds `--adv_selection cat|constrained|penalized|fair|near` and returns a drop-in subclass of `advgen.AdvGenerator`. The `cat` rule must stay identical to CAT's. `near` picks a near miss (`--near_gap`, `--near_tol`) instead of a collision. `--resp_model` takes the motion sets behind beta and avoidability from another predictor; the candidates are always CAT's DenseTNT modes, and with the default `densetnt` the code path is the original one.
   - `blame_reward.BlameWeighting` is used by `cat_RLtrain.py --blame_weighting share` (`--blame_model` chooses the predictor).
   - Run and model names encode the settings (e.g. `cat_fair1_0.3_share_s0`), and `compare_policies` averages seeds by parsing the `_s<seed>` suffix.
   - Swapping ego and adversary is a relabelling of the scenes (`swap.py`, `scripts/responsibility/swap_roles.py` → `raw_scenes_500_swapped`), read by `cat_advgen.py`/`cat_RLtrain.py --scenes_dir` (not `--data_dir`: advgen owns that name). A scene folder must hold only scene `.pkl` files: MetaDrive asserts it.
 
-Upstream CAT code is `advgen/`, `saferl_algo/`, `saferl_plotter/`, `cat_*.py` and the numbered `scripts/*.py`. Keep changes there minimal. Code from catk4test (`responsibility/predictors/smart/native/`, `scripts/smart/`, `tests/smart/`, `docs/smart/`, `skills/`) is under the NVIDIA Source Code License for CAT-K (`LICENSE.CATK`). `cat_RLtrain.py` is indented with tabs; match that when you edit it.
+Upstream CAT code is `advgen/`, `saferl_algo/`, `saferl_plotter/`, `cat_*.py` and the numbered `scripts/*.py`. Keep changes there minimal. Code from catk4test (`responsibility/predictors/smart/native/`, `scripts/smart/`, `tests/smart/`, `docs/smart/`, `skills/`) is under the NVIDIA Source Code License for CAT-K (`LICENSE.CATK`). `cat_RLtrain.py` is indented with tabs; match that when you edit it. `rl/geometry.py` and `rl/adversary.py` came from the GPUDrive port (`gpucat/` on `main`).
 
 ## Conventions
 

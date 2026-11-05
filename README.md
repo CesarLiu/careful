@@ -24,7 +24,7 @@ This repository merges two implementations that differed only in the motion pred
 The responsibility code now lives in one package, and every motion predictor
 plugs into it through a single adapter interface.
 
-> **中文概要**：本仓库把 catspond（DenseTNT / MTR，含 MetaDrive TD3 训练）和 catk4test（CAT-K 的 SMART）两份 counterfactual responsibility 实现合并。责任度量（`responsibility/`）与运动预测器解耦：预测器只需实现 `distribution()` 和 `sample()` 两个方法（`responsibility/predictors/base.py`），即可用 `--model densetnt|mtr|unitraj|smart|constant_velocity` 或 `--model 包.模块:工厂函数` 切换。UniTraj 的任一方法（MTR、Wayformer、AutoBot、EMP…）都可以通过 `--model unitraj --unitraj-method <方法>` 使用。RL 训练部分保留 MetaDrive TD3 和 SMART 奖励微调（这个分支去掉了 GPUDrive PPO，即 `gpucat/`），并且 fair 对手的约束和碰撞归因也可以换用任意预测器（`--resp_model`、`--blame_model`）。
+> **中文概要**：本仓库把 catspond（DenseTNT / MTR，含 CAT 的 TD3 训练）和 catk4test（CAT-K 的 SMART）两份 counterfactual responsibility 实现合并。责任度量（`responsibility/`）与运动预测器解耦：预测器只需实现 `distribution()` 和 `sample()` 两个方法（`responsibility/predictors/base.py`），即可用 `--model densetnt|mtr|unitraj|smart|constant_velocity` 或 `--model 包.模块:工厂函数` 切换。UniTraj 的任一方法（MTR、Wayformer、AutoBot、EMP…）都可以通过 `--model unitraj --unitraj-method <方法>` 使用。全部代码只用 CAT-K 的 Python 3.11 环境运行；CAT 的 TD3 训练改在纯 torch 的日志回放仿真器上进行（`rl/`、`scripts/rl/`），不再依赖 MetaDrive 或 GPUDrive；SMART 奖励微调保留，并且 fair 对手的约束和碰撞归因也可以换用任意预测器（`--resp_model`、`--blame_model`）。
 
 ## Layout
 
@@ -50,10 +50,13 @@ responsibility/                 predictor-agnostic metrics and tools (operate on
       scene_data.py             Scene -> CAT-K's PyG batch, in memory
       catk.py, configs/         finding the CAT-K checkout; Hydra config over its configs/
       native/                   CAT-K's own batched pipeline (from catk4test src/responsibility)
-advgen/ saferl_algo/ saferl_plotter/ cat_RLtrain.py cat_advgen.py    CAT (MetaDrive, TD3; upstream code)
+rl/                             MetaDrive-free CAT training: log-replay simulator, batched adversary, TD3, blame weighting
+scripts/rl/                     build the scene bank, precompute CAT's candidates, check the simulator, train TD3
+advgen/                         CAT's DenseTNT and adversary generator (upstream code)
+saferl_algo/ saferl_plotter/ cat_RLtrain.py cat_advgen.py    CAT's MetaDrive TD3 (upstream, kept for reference; needs Python 3.9)
 scripts/responsibility/         CLI for the predictor-agnostic pipeline (any --model)
 scripts/smart/                  CLI for the native SMART pipeline (CAT-K environment)
-tests/responsibility/  tests/smart/
+tests/responsibility/  tests/smart/  tests/rl_training/
 docs/                           CAT's readme, the SMART method notes and runbook
 skills/judge-driving-aggression/    Claude skill: rule-based aggression judging with jurisdictions
 ```
@@ -84,7 +87,7 @@ unsupported option before a run starts.
 
 | `--model` | predictor | needs | motion set | exact KL (Eq. 4) |
 |---|---|---|---|---|
-| `densetnt` (default) | CAT's pretrained DenseTNT, goal grid + completion | Python 3.9, TensorFlow 2.12, `advgen/pretrained/densetnt.bin` | sampled, weighted, top-k, NMS | yes (shared goal grid) |
+| `densetnt` (default) | CAT's pretrained DenseTNT, goal grid + completion | TensorFlow, `advgen/utils_cython` built for the Python in use (`scripts/setup_catk_env.sh`), `advgen/pretrained/densetnt.bin` | sampled, weighted, top-k, NMS | yes (shared goal grid) |
 | `mtr` | UniTraj MTR, all 64 intention queries | UniTraj checkout (`$UNITRAJ_ROOT`), its CUDA ops, `--checkpoint` | sampled, weighted, top-k, NMS | yes (fixed intention points) |
 | `unitraj` | any UniTraj method through its own forward pass (`--unitraj-method wayformer\|autobot\|EMP\|forecast\|SMART`) | UniTraj checkout, `--checkpoint` | sampled, weighted, top-k, NMS | formally; modes are not fixed points, so prefer `boltzmann` |
 | `smart` | CAT-K SMART rollouts, the others teacher-forced and hidden after k (`--smart-neighbor-future`) | CAT-K checkout (`$CATK_ROOT`), Python 3.11, PyG 2.6.1, torch_cluster, `--checkpoint` | sampled | no: `boltzmann` or `demand`, or the native pipeline's `exact` |
@@ -160,42 +163,73 @@ in this repository's run format.
 
 ## RL training
 
-Two training loops are kept: CAT's TD3 in MetaDrive and SMART's reward
-fine-tuning. The GPUDrive PPO port of CAT (`gpucat/`, `scripts/gpucat/`) is
-not on this branch; it is on `main`. The responsibility parts the loops use
-accept any predictor.
+Training runs in CAT-K's Python 3.11 environment, with no MetaDrive (which
+does not support Python 3.11) and no GPUDrive:
 
 | loop | simulator, algorithm | entry point | responsibility hooks |
 |---|---|---|---|
-| CAT | MetaDrive, TD3 | `cat_RLtrain.py` (`cat_advgen.py` for the adversary alone) | `--adv_selection cat\|constrained\|penalized\|fair\|near` with `--resp_model` for the fair rule's motion sets; `--blame_weighting share\|rss` with `--blame_model` for the attribution |
+| CAT | `rl/sim.py`: a batched log-replay simulator in plain torch over CAT's scenes; TD3 (`rl/td3.py`, CAT's networks and hyper-parameters) | `scripts/rl/train_td3.py --mode replay\|cat` | `--adv-rule cat\|fair` (CAT's adversary or the fair one, `--resp-threshold`, `--resp-avoid`); `--blame-weighting share\|rss` with `--blame-model` for the attribution (`rl/blame.py`) |
 | SMART fine-tuning | CAT-K SMART, policy-gradient fine-tuning toward a responsibility level | `scripts/smart/finetune_reward.py` | reward networks from `scripts/smart/train_reward.py` |
 
+`rl/sim.py` keeps CAT's setting and replaces only the simulator:
+- **Kept:** CAT's 500 scenes (0–399 train, 400–499 test), the other traffic
+  replayed from the log, CAT's adversary driving its chosen plan a step late,
+  and the schedule of adversarial episodes.
+- **Kept:** MetaDrive's reward (progress along the route, +10 arrival, −10 out
+  of road, −1 per step in contact) and its termination rules (out of road at
+  10 m off the route, a road edge or a solid yellow line; collisions end only
+  evaluation episodes).
+- **Replaced:** the ego is a kinematic bicycle (acceleration −6…4 m/s²,
+  curvature ±0.3 1/m).
+- **Replaced:** the observation is a vector in the ego's frame: ego state, the
+  route ahead, rays to road edges and yellow lines, and the 16 nearest agents.
+  MetaDrive gave a lidar.
+
+So results are not comparable with MetaDrive's. CAT's adversary selection
+(`rl/adversary.py`) is batched in torch from candidates precomputed once
+per scene with DenseTNT (`scripts/rl/precompute_candidates.py`).
+
 ```bash
-# CAT with the fair adversary and blame-weighted collision penalty, both measured with MTR
-python -u cat_RLtrain.py --adv_selection fair --resp_threshold 1 --resp_avoid 0.3 \
-    --resp_model mtr --resp_checkpoint ckpts/mtr.ckpt \
-    --blame_weighting share --blame_model mtr --blame_checkpoint ckpts/mtr.ckpt
+python -m scripts.rl.build_scenes --scenes raw_scenes_500 --out logs/rl/scenes.npz
+python -m scripts.rl.precompute_candidates --scenes raw_scenes_500 --out logs/rl/candidates.npz --device cuda
+python -m scripts.rl.check_sim --bank logs/rl/scenes.npz --candidates logs/rl/candidates.npz --device cuda
+# CAT's adversary, collision penalty weighted by the counterfactual blame (here with SMART)
+python -m scripts.rl.train_td3 --bank logs/rl/scenes.npz --candidates logs/rl/candidates.npz --mode cat \
+    --blame-weighting share --blame-model smart --blame-checkpoint $CATK_ROOT/ckpts/clsft_E9.ckpt \
+    --out logs/rl/runs/cat_share_s0 --seed 0 --device cuda --save-model
 ```
 
-The fair adversary's *candidates* are always CAT's 32 DenseTNT NMS modes; only
-the motion sets behind β (the adversary's alternatives) and avoidability (the
-ego's alternatives) change with `--resp_model`. With the default `densetnt`,
-the code path and its random streams are exactly the previous ones.
+The fair adversary's *candidates* are always CAT's 32 DenseTNT NMS modes;
+`precompute_candidates.py --resp_model` takes the motion sets behind β (the
+adversary's alternatives) and avoidability (the ego's) from another
+predictor, which must give 8 s of future. `cat_RLtrain.py` and
+`cat_advgen.py`, CAT's MetaDrive scripts, are kept unchanged for reference;
+they need MetaDrive and Python 3.9 and are not part of the CAT-K environment.
 
 ## Environments
 
-The predictors' dependencies conflict, so they run in separate environments.
-The predictor-agnostic code needs only numpy, scipy, torch, pyyaml and
-matplotlib.
+Everything runs in CAT-K's Python 3.11 environment (CAT-K's
+`install/setup_server.sh`, then this repository's
+`scripts/setup_catk_env.sh`):
 
-| environment | for | setup |
-|---|---|---|
-| CAT (Python 3.9) | DenseTNT, MetaDrive TD3, the scripts in `responsibility/README.md` | `bash scripts/responsibility/setup_env.sh` (`advgen/utils_cython*.so` is built for 3.9; `python scripts/responsibility/build_cython.py` rebuilds it for another version) |
-| UniTraj | MTR, Wayformer, AutoBot, ... | `bash scripts/responsibility/setup_unitraj_env.sh`; `UNITRAJ_ROOT` |
-| CAT-K (Python 3.11) | SMART, `scripts/smart/*` | CAT-K's `install/setup_server.sh`; `CATK_ROOT` |
+```bash
+source ~/venvs/catk/bin/activate
+bash scripts/setup_catk_env.sh
+```
 
-Not in git: `raw_scenes_500/`, CAT's modified `metadrive/`, `advgen/pretrained/densetnt.bin`
-(see `docs/CAT_README.md`), checkpoints, WOMD and its caches.
+The setup script adds `cython<3`, then builds `advgen/utils_cython` for
+Python 3.11 (the repository ships only the 3.9 build). It also installs
+UniTraj's extra packages (h5py, einops, pytorch_lightning) and runs the tests.
+
+| predictor or loop | needs in the CAT-K environment |
+|---|---|
+| DenseTNT | the 3.11 build of `advgen/utils_cython`, TensorFlow (CAT-K has 2.12), `advgen/pretrained/densetnt.bin` |
+| SMART | `CATK_ROOT` (a CAT-K checkout) and a checkpoint |
+| UniTraj (Wayformer, AutoBot, ...) | `UNITRAJ_ROOT`, the UniTraj extras; MTR also its CUDA ops, built in this environment |
+| TD3 training (`rl/`) | nothing more: plain torch |
+
+Not in git: `raw_scenes_500/`, `advgen/pretrained/densetnt.bin` (see
+`docs/CAT_README.md`), checkpoints, WOMD and its caches.
 
 ## Tests
 
@@ -206,16 +240,28 @@ python -m pytest tests -q          # no model, data or GPU needed
 `tests/responsibility` covers the metrics and tools, now including the predictor
 registry and a whole `compute_responsibility` run with the constant-velocity
 predictor (`test_predictors.py`). `tests/smart` covers the SMART pipeline on
-CAT-K's stub SMART and the adapter (`test_adapter.py`). Tests that need
+CAT-K's stub SMART and the adapter (`test_adapter.py`). `tests/rl_training`
+covers the simulator on synthetic scenes with known answers (the bicycle
+inverse replays a straight and a curved log to 1 mm, arrival pays 85 + 10,
+collisions, road edges, yellow lines, the adversary a step late on its
+plan, CAT's history deque), the batched selection against CAT's numpy
+code, TD3, the blame weighting both ways under RSS, and a whole training
+run. Tests that need
 TensorFlow, a UniTraj checkout or CAT-K skip or fail to collect without them.
 
 Verified while merging, in one Python 3.11 environment (torch 2.4.1 CPU, PyG 2.6.1, torch_cluster 1.6.3, TensorFlow 2.15):
 
-- `pytest tests`: 428 passed, 3 skipped (they need a UniTraj checkout, WOMD protos and MetaDrive); `test_unitraj.py` alone, with `UNITRAJ_ROOT` set, passes all 15 tests;
+- `pytest tests`: 451 passed, 3 skipped (they need a UniTraj checkout, WOMD protos and MetaDrive); `test_unitraj.py` alone, with `UNITRAJ_ROOT` set, passes all 15 tests;
 - `scripts/smart/verify_adapter.py` on a randomly initialised CAT-K SMART (`smart_nano_1M`), a synthetic scene with WOMD's 0.5 m point spacing: all 7 checks pass. SMART sees the map (80 tokens), the first sampled position is within 1.16 m of the logged one, samples are reproducible from the generator, removing a neighbour changes the free agent's token log-probabilities, and rollouts stop where the log does (80 steps from k = 10, 70 from k = 20);
 - `scripts/smart/compare_adapter_native.py` on the same model and 3 synthetic scenes (78 window-neighbour pairs, 2 seeds per path): the adapter and CAT-K's native pipeline agree within seed noise (safety Spearman 0.960 against 0.951–0.970 between seeds, courtesy 0.875 against 0.893–0.904);
 - UniTraj Wayformer and AutoBot (random weights) through `unitraj_predictor` and the metrics: 6 modes of 60 steps each, finite β_s and β_c;
-- CAT's fair adversary with a randomly initialised DenseTNT, with `--resp_model densetnt` and `constant_velocity`.
+- CAT's fair adversary with a randomly initialised DenseTNT, with `--resp_model densetnt` and `constant_velocity`;
+- the TD3 pipeline on 8 synthetic two-lane scenes, without MetaDrive:
+  - `build_scenes` built the bank;
+  - `precompute_candidates` ran on a randomly initialised DenseTNT;
+  - `check_sim`: the bicycle inverse replays every SDC log with 0.000 m error; 8/8 logged drives arrive; the adversary sits exactly on its plan a step late; 1,183 world steps/s with 8 worlds on 4 CPU cores. The collision check flagged 3 of the 8 scenes, all collisions in the random synthetic tracks themselves;
+  - `train_td3 --mode cat`: in 30k transitions (4.3 min on CPU), arrival in training episodes rose from 0.24 to 0.93;
+  - `--blame-weighting rss|share`: attributed 173–176 collisions in 6k transitions.
 
 There were no trained checkpoints, no WOMD data and no GPU, so nothing here
 measures a trained model. The measured results in `responsibility/README.md`,
