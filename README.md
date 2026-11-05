@@ -252,7 +252,7 @@ TensorFlow, a UniTraj checkout or CAT-K skip or fail to collect without them.
 
 Verified while merging, in one Python 3.11 environment (torch 2.4.1 CPU, PyG 2.6.1, torch_cluster 1.6.3, TensorFlow 2.15):
 
-- `pytest tests`: 446 passed, 3 skipped (they need a UniTraj checkout, WOMD protos and MetaDrive); `test_unitraj.py` alone, with `UNITRAJ_ROOT` set, passes all 15 tests;
+- `pytest tests`: 446 passed, 2 skipped (they need a UniTraj checkout and trimesh); `test_unitraj.py` alone, with `UNITRAJ_ROOT` set, passes all 15 tests;
 - `scripts/smart/verify_adapter.py` on a randomly initialised CAT-K SMART (`smart_nano_1M`), a synthetic scene with WOMD's 0.5 m point spacing: all 7 checks pass. SMART sees the map (80 tokens), the first sampled position is within 1.16 m of the logged one, samples are reproducible from the generator, removing a neighbour changes the free agent's token log-probabilities, and rollouts stop where the log does (80 steps from k = 10, 70 from k = 20);
 - `scripts/smart/compare_adapter_native.py` on the same model and 3 synthetic scenes (78 window-neighbour pairs, 2 seeds per path): the adapter and CAT-K's native pipeline agree within seed noise (safety Spearman 0.960 against 0.951–0.970 between seeds, courtesy 0.875 against 0.893–0.904);
 - UniTraj Wayformer and AutoBot (random weights) through `unitraj_predictor` and the metrics: 6 modes of 60 steps each, finite β_s and β_c;

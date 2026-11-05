@@ -1,6 +1,6 @@
 """Checks the right-of-way rules (responsibility/right_of_way.py) on logged
 driving, at scale: WOMD's validation_interactive split converted by
-convert_womd_split.py (or with ScenarioNet), or any folder of scene files.
+convert_womd_split.py on main (or with ScenarioNet), or any folder of scene files.
 
 Logged drivers mostly keep the right of way, so the holder the rules name
 should usually pass the conflict point P* first. For every scene the pair

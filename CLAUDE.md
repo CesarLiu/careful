@@ -42,10 +42,10 @@ python -m scripts.responsibility.verify_densetnt --n 3 --device cuda      # need
 Several things are not in git and are usually **absent on a dev machine**:
 
 - downloaded separately (see `docs/CAT_README.md`): the modified `metadrive/` package, `raw_scenes_500/*.pkl` (the scenes) and `advgen/pretrained/densetnt.bin`;
-- more scenes: `scripts/responsibility/convert_womd_split.py` converts a whole WOMD split (the L4 server has v1.2.1 shards in `~/womd_v1_2_1/`) into CAT's scene format with CAT's own converter, plus an `index.csv` (`sdc_in_ooi`, `in_cat`). The open-loop tools read these scenes. The closed loop (MetaDrive, `advgen`) also runs them, given a folder of `sdc_in_ooi` scenes numbered `0.pkl` …;
+- more scenes: CAT's WOMD converters (`scripts/convert_WOMD_to_MD.py`, `scripts/select_cases.py`, `scripts/responsibility/convert_womd_split.py`) need the metadrive package and are not on this branch (they are on `main`). In the CAT-K environment, scenes from WOMD come through CAT-K's own cache (`src/data_preprocess.py`) read by `responsibility/catk_cache.py`, whose maps are rebuilt from SMART's tokens (lane ids and connections approximate, lights held from 1.0 s);
 - produced on the server: `logs/` (gitignored) and `rollouts/` (not ignored, so don't commit it).
 
-CAT's MetaDrive closed loop (`cat_RLtrain.py`, `cat_advgen.py`, `saferl_*`, `collect_rollouts.py`, `verify_adv_export.py`, `run_rl.sh`, `run_eval.sh`; the plans mark these 🖥) was removed on this branch (it is on `main`); the plans and `RUNBOOK_H200.md` still describe it as history. Training is `scripts/rl/train_td3.py` on `rl/sim.py`; GPU and data steps are in `docs/RUNBOOK.md`. Still MetaDrive-bound: `scripts/convert_WOMD_to_MD.py`/`select_cases.py` (and `convert_womd_split.py`, which uses them) import the metadrive package, only to convert new WOMD data.
+CAT's MetaDrive closed loop (`cat_RLtrain.py`, `cat_advgen.py`, `saferl_*`, `collect_rollouts.py`, `verify_adv_export.py`, `run_rl.sh`, `run_eval.sh`; the plans mark these 🖥) was removed on this branch (it is on `main`); the plans and `RUNBOOK_H200.md` still describe it as history. Training is `scripts/rl/train_td3.py` on `rl/sim.py`; GPU and data steps are in `docs/RUNBOOK.md`. Nothing on this branch imports MetaDrive (UniTraj only reads `metadrive/type.py`).
 
 ## RL training (rl/)
 
@@ -93,7 +93,7 @@ The pipeline is: scene → motion model → metrics → per-run outputs → summ
   - Run and model names encode the settings (e.g. `cat_fair1_0.3_share_s0`), and `compare_policies` averages seeds by parsing the `_s<seed>` suffix.
   - Swapping ego and adversary is a relabelling of the scenes (`swap.py`, `scripts/responsibility/swap_roles.py` → `raw_scenes_500_swapped`), read by `cat_advgen.py`/`cat_RLtrain.py --scenes_dir` (not `--data_dir`: advgen owns that name). A scene folder must hold only scene `.pkl` files: MetaDrive asserts it.
 
-Upstream CAT code is `advgen/` and `scripts/convert_WOMD_to_MD.py`, `scripts/select_cases.py`. Keep changes there minimal. Code from catk4test (`responsibility/predictors/smart/native/`, `scripts/smart/`, `tests/smart/`, `docs/smart/`, `skills/`) is under the NVIDIA Source Code License for CAT-K (`LICENSE.CATK`). `cat_RLtrain.py` is indented with tabs; match that when you edit it. `rl/geometry.py` and `rl/adversary.py` came from the GPUDrive port (`gpucat/` on `main`).
+Upstream CAT code is `advgen/`. Keep changes there minimal. Code from catk4test (`responsibility/predictors/smart/native/`, `scripts/smart/`, `tests/smart/`, `docs/smart/`, `skills/`) is under the NVIDIA Source Code License for CAT-K (`LICENSE.CATK`). `cat_RLtrain.py` is indented with tabs; match that when you edit it. `rl/geometry.py` and `rl/adversary.py` came from the GPUDrive port (`gpucat/` on `main`).
 
 ## Conventions
 

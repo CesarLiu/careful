@@ -12,7 +12,7 @@ rubric.md.
 Input is a folder of ScenarioNet/MetaDrive scene pickles (CAT's ``raw_scenes_500/*.pkl``), or one
 such file. It reads them with the ``responsibility`` package of the CAT repository (the scene
 loader, the lane graph, the conflict finder), found through ``--cat-root`` or $CAT_ROOT, else by
-walking up from here. Convert a WOMD tfrecord with CAT's ``convert_womd_split.py`` first.
+walking up from here. Convert a WOMD tfrecord with CAT's ``convert_womd_split.py`` (on main; needs the metadrive package) first, or read CAT-K's WOMD cache (responsibility/catk_cache.py).
 
     python screen_crossing.py --scenes raw_scenes_500 --profile us-california --out screen.csv
 """

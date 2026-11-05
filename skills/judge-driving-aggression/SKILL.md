@@ -20,7 +20,7 @@ violation, and a person who judged by the law found that most "aggressive" cross
    per scene, as CAT's `raw_scenes_500/*.pkl`) through the `responsibility` package of the CAT
    repository. It finds the repo by `--cat-root`, `$CAT_ROOT`, or by walking up from the skill;
    ask the user where it is if it fails. A WOMD tfrecord must be converted first with CAT's
-   `scripts/smart/convert_womd_split.py`. Each scene needs an SDC and a second object of
+   `scripts/responsibility/convert_womd_split.py` (on `main` of the `careful` repository; it needs the metadrive package), or read CAT-K's WOMD cache with `responsibility/catk_cache.py`. Each scene needs an SDC and a second object of
    interest (or pass `--agent` and `--other` track ids for one scene).
 
 2. **Pick the jurisdiction.** Ask the user if they have not said. WOMD is entirely US cities, so
