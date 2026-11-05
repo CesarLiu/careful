@@ -7,7 +7,7 @@
   unitraj            any other UniTraj method -- Wayformer, AutoBot, EMP, ... --
                      through its own forward pass (unitraj.py, --unitraj-method)
   smart              CAT-K's SMART, counterfactual rollouts with the other agents
-                     teacher-forced or hidden (smart/; needs a CAT-K checkout)
+                     teacher-forced or hidden (smart/ and the catk package)
 
 Each is imported only when chosen, so none brings in another's dependencies.
 A predictor of your own is registered with ``register_predictor`` or named
@@ -119,8 +119,7 @@ def _unitraj_settings(args, default_method):
 def _load_smart(args, device):
     from responsibility.predictors.smart import load_smart_predictor
 
-    return load_smart_predictor(checkpoint=_arg(args, "checkpoint"), catk_root=_arg(args, "catk_root"),
-                                model_config=_arg(args, "smart_config", "smart"), device=device,
+    return load_smart_predictor(checkpoint=_arg(args, "checkpoint"), model_config=_arg(args, "smart_config", "smart"), device=device,
                                 neighbor_future=_arg(args, "smart_neighbor_future", "hidden"),
                                 batch_size=_arg(args, "smart_batch", 32))
 
@@ -139,5 +138,5 @@ register_predictor("mtr", lambda a, d: _load_unitraj(a, d, "MTR_womd"),
                    lambda a: _unitraj_settings(a, "MTR_womd"), help="UniTraj MTR, all 64 intentions")
 register_predictor("unitraj", lambda a, d: _load_unitraj(a, d, "wayformer"),
                    lambda a: _unitraj_settings(a, "wayformer"), help="any UniTraj method (--unitraj-method)")
-register_predictor("smart", _load_smart, _smart_settings, help="CAT-K SMART (--catk-root)")
+register_predictor("smart", _load_smart, _smart_settings, help="CAT-K SMART (the catk package)")
 register_predictor("constant_velocity", _load_cv, help="kinematic reference, no dependencies")

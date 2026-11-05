@@ -6,7 +6,7 @@ data (SMART_PLAN.md): the same scenarios, but as SMART was trained on them
 CAT's scenes come from WOMD's validation_interactive split; each CAT file
 records its source shard. This scans the given tfrecords for the scenarios'
 ids and runs catk's own preprocessing on every hit -- the body of catk's
-src/data_preprocess.py wm2argo, unchanged -- writing OUT/cache/<scene>.pkl
+catk/data_preprocess.py wm2argo, unchanged -- writing OUT/cache/<scene>.pkl
 (scenario id inside: the CAT scene's file stem, as export_catk.py does) and
 OUT/index.json. Scenes CAT duplicated get a file each. Reports which
 scenarios were not found, and, when reading WOMD's own shards, which were
@@ -14,7 +14,7 @@ found in another shard than CAT's v1.1 file named. The tfrecords may also
 be one file of just CAT's scenarios (extract_womd_scenarios.py).
 
 Runs in catk's environment (TensorFlow and the WOMD protos). Example:
-    ~/venvs/catk/bin/python -m scripts.responsibility.cache_womd_for_cat --catk-root ~/catk \\
+    python -m scripts.responsibility.cache_womd_for_cat \\
         --tfrecords ~/womd_v1_2_1/validation_interactive --out-dir logs/catk/v121
 """
 
@@ -22,14 +22,12 @@ import argparse
 import json
 import os
 import pickle
-import sys
 from collections import defaultdict
 from pathlib import Path
 
 
 def parse_args(argv=None):
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--catk-root", default=os.environ.get("CATK_ROOT", str(Path.home() / "catk")))
     p.add_argument("--tfrecords", required=True, help="Directory of WOMD v1.2.1 scenario tfrecords.")
     p.add_argument("--scenes", default="raw_scenes_500", help="CAT's scenes (for their scenario ids and sources).")
     p.add_argument("--out-dir", required=True)
@@ -38,14 +36,13 @@ def parse_args(argv=None):
 
 def main(argv=None):
     args = parse_args(argv)
-    sys.path.append(str(Path(args.catk_root).expanduser().resolve()))
     import tensorflow as tf
     from waymo_open_dataset.protos import scenario_pb2
 
-    from src.data_preprocess import (decode_dynamic_map_states_from_proto, decode_map_features_from_proto,
+    from catk.data_preprocess import (decode_dynamic_map_states_from_proto, decode_map_features_from_proto,
                                      decode_tracks_from_proto, get_agent_features, get_map_features,
                                      process_dynamic_map)
-    from src.smart.utils.preprocess import preprocess_map
+    from catk.smart.utils.preprocess import preprocess_map
 
     targets, expected = defaultdict(list), {}
     for f in sorted(Path(args.scenes).glob("*.pkl")):

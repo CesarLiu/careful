@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Prepares CAT-K's environment (Python 3.11; CAT-K's install/setup_server.sh)
+# Prepares the Python 3.11 environment made by install/setup_server.sh
 # to run all of this repository: the predictor-agnostic metrics, DenseTNT,
 # SMART, UniTraj's methods and the MetaDrive-free TD3 training (rl/).
 #
 #   source ~/venvs/catk/bin/activate && bash scripts/setup_catk_env.sh
 #
-# What it adds to CAT-K's packages (torch 2.4.1, PyG 2.6.1, torch_cluster,
+# What it adds to install/requirements.txt's packages (torch 2.4.1, PyG 2.6.1, torch_cluster,
 # TensorFlow 2.12, torchvision, scipy, matplotlib, hydra):
 #   - cython < 3, and with it advgen/utils_cython for this Python (DenseTNT's
 #     input parsing; the repository ships the Python 3.9 build only)

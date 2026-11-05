@@ -4,10 +4,35 @@ torch_geometric imports so it can be used (and tested) anywhere."""
 import json
 import os
 import pickle
+import re
 from pathlib import Path
 from typing import Dict, List
 
 import torch
+
+
+# Results pickled by catk4test name its modules src.responsibility.* and src.smart.*
+_LEGACY = ((re.compile(r"^src\.responsibility\.(geometry|risk|hmm)$"), r"responsibility.\1"),
+           (re.compile(r"^src\.responsibility(\.|$)"), r"responsibility.predictors.smart.native\1"),
+           (re.compile(r"^src\.(smart|utils)(\.|$)"), r"catk.\1\2"))
+
+
+def legacy_module(module: str) -> str:
+    """Where a module of catk4test's (src.responsibility.*, src.smart.*) lives now."""
+    for pattern, repl in _LEGACY:
+        if pattern.match(module):
+            return pattern.sub(repl, module)
+    return module
+
+
+class LegacyUnpickler(pickle.Unpickler):
+    def find_class(self, module, name):
+        return super().find_class(legacy_module(module), name)
+
+
+def load_pickle(handle):
+    """pickle.load that also reads results written by catk4test (old module names)."""
+    return LegacyUnpickler(handle).load()
 
 
 def scenario_files(raw_dir: str) -> List[Path]:
@@ -89,10 +114,10 @@ def load_observations(path: str) -> list:
         observations = []
         for f in sorted(folder.glob("*.pkl")):
             with open(f, "rb") as handle:
-                observations.extend(pickle.load(handle))
+                observations.extend(load_pickle(handle))
         return observations
     with open(p, "rb") as f:
-        return pickle.load(f)
+        return load_pickle(f)
 
 
 def save_hmm(hmm, path: str) -> None:
@@ -103,7 +128,7 @@ def save_hmm(hmm, path: str) -> None:
 
 def load_hmm(path: str):
     with open(path, "rb") as f:
-        return pickle.load(f)
+        return load_pickle(f)
 
 
 def save_reward_nets(bundles: Dict, path: str) -> None:

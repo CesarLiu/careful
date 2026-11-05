@@ -6,7 +6,7 @@ Runs in catk's environment (Python 3.11; catk's install/setup_server.sh),
 with catk's own second preprocessing stage: responsibility/catk_export.py
 rebuilds what catk's protobuf decoders produce, and get_agent_features,
 get_map_features / process_dynamic_map and preprocess_map from catk's
-src/data_preprocess.py make the cached scenario of it, as for WOMD.
+catk/data_preprocess.py make the cached scenario of it, as for WOMD.
 
 Writes OUT/cache/<scene>.pkl (the scenario id inside is the scene's file
 stem, so results map back to the scenes here) and OUT/index.json (scene ->
@@ -15,9 +15,9 @@ directory as a scenario, hence the separate index. Re-running skips scenes
 already exported.
 
 Example (from this repository's root):
-    ~/venvs/catk/bin/python -m scripts.responsibility.export_catk --catk-root ~/catk \\
+    python -m scripts.responsibility.export_catk \\
         --scenes raw_scenes_500 --out-dir logs/catk/scenes
-    ~/venvs/catk/bin/python -m scripts.responsibility.export_catk --catk-root ~/catk \\
+    python -m scripts.responsibility.export_catk \\
         --rollouts rollouts/replay/cat --out-dir logs/catk/replay_cat
 """
 
@@ -36,7 +36,6 @@ from responsibility.scene import Scene, scene_files  # noqa: E402
 
 def parse_args(argv=None):
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--catk-root", default=os.environ.get("CATK_ROOT", str(Path.home() / "catk")))
     p.add_argument("--scenes", default="raw_scenes_500")
     p.add_argument("--rollouts", default=None, help="Export the scenes rebuilt from these rollouts instead.")
     p.add_argument("--first", type=int, default=0, help="Without --rollouts: index of the first scene file.")
@@ -45,16 +44,16 @@ def parse_args(argv=None):
     return p.parse_args(argv)
 
 
-def catk_stage_two(catk_root):
+def catk_stage_two():
     """catk's own second preprocessing stage (responsibility/predictors/smart/scene_data.py)."""
     from responsibility.predictors.smart.scene_data import catk_stage_two as build
 
-    return build(catk_root)
+    return build()
 
 
 def main(argv=None):
     args = parse_args(argv)
-    build = catk_stage_two(args.catk_root)
+    build = catk_stage_two()
     out = Path(args.out_dir)
     (out / "cache").mkdir(parents=True, exist_ok=True)
     index_path = out / "index.json"

@@ -44,9 +44,9 @@ and OUT/config.json; OUT/scenes/<scene>.pkl makes a run resumable.
 
 Runs in CAT-K's environment, from this repository's root:
 
-    CATK_ROOT=~/catk python -m scripts.smart.compare_adapter_native --ckpt ~/catk/ckpts/clsft_E9.ckpt \\
+    python -m scripts.smart.compare_adapter_native --ckpt ckpts/clsft_E9.ckpt \\
         --scenes raw_scenes_500 --n 20 --agent sdc adv --out-dir logs/smart/compare_adapter_native
-    CATK_ROOT=~/catk python -m scripts.smart.compare_adapter_native --ckpt random --scenes <dir> --n 2 \\
+    python -m scripts.smart.compare_adapter_native --ckpt random --scenes <dir> --n 2 \\
         --model-config smart_nano_1M --out-dir /tmp/compare   # plumbing only
 
 The summary ends with CONSISTENT or DIFFERENT per metric: CONSISTENT when
@@ -86,7 +86,6 @@ def parse_args(argv=None):
     p.add_argument("--out-dir", required=True)
     p.add_argument("--ckpt", required=True, help="SMART checkpoint, or 'random' (plumbing check only).")
     p.add_argument("--model-config", default="smart")
-    p.add_argument("--catk-root", default=os.environ.get("CATK_ROOT"))
     p.add_argument("--device", default="auto")
     p.add_argument("--batch", type=int, default=32, help="Scene copies per model call.")
     p.add_argument("--stride", type=int, default=5, help="Context steps between windows (0.1 s each).")
@@ -343,10 +342,8 @@ def scene_rows(stem: str, scene, data, roles, args, native, adapter_predictor, a
 
 def main(argv=None):
     args = parse_args(argv)
-    from responsibility.predictors.smart.catk import require_catk
     from responsibility.scene import Scene, scene_files
 
-    root = require_catk(args.catk_root)
     scenes_dir = Path(args.scenes).resolve()
     out = Path(args.out_dir).resolve()
     (out / "scenes").mkdir(parents=True, exist_ok=True)
@@ -374,9 +371,9 @@ def main(argv=None):
         from scripts.responsibility import export_catk
 
         device = resolve_device(args.device)
-        export_catk.main(["--catk-root", str(root), "--scenes", str(scenes_dir), "--out-dir", str(out),
+        export_catk.main(["--scenes", str(scenes_dir), "--out-dir", str(out),
                           "--first", str(args.first), "--n", str(args.n)])
-        predictor = load_smart_predictor(args.ckpt, root, args.model_config, device,
+        predictor = load_smart_predictor(args.ckpt, args.model_config, device,
                                          neighbor_future=args.neighbor_future, batch_size=args.batch)
         model = predictor.synthesizer.model
         ncfg = nm.ResponsibilityConfig(num_historical_steps=predictor.history, window_stride=args.stride,

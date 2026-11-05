@@ -28,7 +28,7 @@ has). The random stream is seeded per scene (--seed + scene number).
 
 Runs in catk's environment, from this repository's root:
 
-    ~/venvs/catk/bin/python -m scripts.responsibility.smart_records \\
+    python -m scripts.responsibility.smart_records --ckpt ckpts/clsft_E9.ckpt \\
         --scenes logs/responsibility/labelled/scenes_adv --agent adv --out-dir logs/catk/labelled/adv
     python -m scripts.responsibility.visualize_responsibility \\
         --record logs/catk/labelled/adv/records/*.pkl --out-dir logs/catk/labelled/videos_adv
@@ -68,8 +68,7 @@ def parse_args(argv=None):
     p.add_argument("--scenes", required=True, help="CAT scene files (<n>.pkl).")
     p.add_argument("--agent", default="adv", help="sdc, adv (the other object of interest) or a track id.")
     p.add_argument("--out-dir", required=True)
-    p.add_argument("--catk-root", default=os.environ.get("CATK_ROOT", str(Path.home() / "catk")))
-    p.add_argument("--ckpt", default=None, help="SMART checkpoint (default CATK_ROOT/ckpts/clsft_E9.ckpt).")
+    p.add_argument("--ckpt", default="ckpts/clsft_E9.ckpt", help="SMART checkpoint (CAT-K's .ckpt).")
     p.add_argument("--device", default="auto")
     p.add_argument("--batch", type=int, default=32, help="Scene copies per model call.")
     p.add_argument("--stride", type=int, default=2, help="Context steps between windows (0.1 s each).")
@@ -186,8 +185,7 @@ def to_frame(scene: Scene, agent: int, obs, captured, tid_of) -> dict:
 
 def main(argv=None):
     args = parse_args(argv)
-    catk_root = Path(args.catk_root).expanduser().resolve()
-    ckpt = Path(args.ckpt).resolve() if args.ckpt else catk_root / "ckpts" / "clsft_E9.ckpt"
+    ckpt = Path(args.ckpt).resolve()
     scenes_dir = Path(args.scenes).resolve()
     out = Path(args.out_dir).resolve()
     for sub in ("obs", "records"):
@@ -199,11 +197,8 @@ def main(argv=None):
     print(f"{len(files)} scenes, {len(files) - len(todo)} done, {len(todo)} to go", flush=True)
     if not todo:
         return
-    export_catk.main(["--catk-root", str(catk_root), "--scenes", str(scenes_dir), "--out-dir", str(out)])
+    export_catk.main(["--scenes", str(scenes_dir), "--out-dir", str(out)])
 
-    os.environ["CATK_ROOT"] = str(catk_root)
-    sys.path.append(str(catk_root))
-    os.chdir(catk_root)  # SMART reads its token files relative to the catk root
     import responsibility.predictors.smart.native.dataset_builder as builder
     import responsibility.predictors.smart.native.metrics as m
     from responsibility.predictors.smart.native.interaction import InteractionConfig
@@ -232,7 +227,7 @@ def main(argv=None):
                            "courtesy_skip_distance": cfg.courtesy_skip_distance, "seed": args.seed},
         "catk": asdict(cfg),
         "agent": args.agent, "scenes": str(scenes_dir),
-        "model": {"name": "smart", "ckpt": str(ckpt), "catk_root": str(catk_root)},
+        "model": {"name": "smart", "ckpt": str(ckpt)},
     }
     config_path = out / "config.json"
     if config_path.exists():

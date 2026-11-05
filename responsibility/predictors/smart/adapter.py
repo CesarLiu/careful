@@ -176,7 +176,7 @@ class SmartPredictor:
         return None, log_prob.float().cpu(), trajs
 
 
-def load_smart_predictor(checkpoint: Optional[str], catk_root=None, model_config: str = "smart",
+def load_smart_predictor(checkpoint: Optional[str], model_config: str = "smart",
                          device: str = "cpu", neighbor_future: str = "hidden", batch_size: int = 32,
                          horizon: Optional[int] = None) -> SmartPredictor:
     """A trained SMART checkpoint (CAT-K's Lightning .ckpt, with the
@@ -185,33 +185,23 @@ def load_smart_predictor(checkpoint: Optional[str], catk_root=None, model_config
     to test the environment and the plumbing without a checkpoint."""
     import os
 
-    from responsibility.predictors.smart.catk import require_catk
-
     if not checkpoint:
         raise SystemExit("--model smart needs --checkpoint (a CAT-K SMART .ckpt)")
-    root = require_catk(catk_root)
     from responsibility.predictors.smart.native.pipeline import (compose_responsibility_config,
                                                                    default_sampling_scheme, load_smart_model,
                                                                    resolve_device)
     from responsibility.predictors.smart.scene_data import catk_batch_builder
 
     device = resolve_device(device)
-    random_weights = str(checkpoint) == "random"
-    checkpoint = checkpoint if random_weights else os.path.abspath(checkpoint)
-    cwd = os.getcwd()
-    os.chdir(root)  # CAT-K's configs resolve paths against its root
-    try:
-        cfg = compose_responsibility_config(overrides=[f"model={model_config}"])
-        if random_weights:
-            from src.smart.model.smart import SMART
+    cfg = compose_responsibility_config(overrides=[f"model={model_config}"])
+    if str(checkpoint) == "random":
+        from catk.smart.model.smart import SMART
 
-            torch.manual_seed(0)
-            model = SMART(cfg.model.model_config).eval().to(device)
-        else:
-            model = load_smart_model(cfg.model.model_config, checkpoint, device=device)
-    finally:
-        os.chdir(cwd)
+        torch.manual_seed(0)
+        model = SMART(cfg.model.model_config).eval().to(device)
+    else:
+        model = load_smart_model(cfg.model.model_config, os.path.abspath(checkpoint), device=device)
     history = int(cfg.model.model_config.decoder.num_historical_steps)
-    return SmartPredictor(model, default_sampling_scheme(), catk_batch_builder(root, device),
+    return SmartPredictor(model, default_sampling_scheme(), catk_batch_builder(device),
                           neighbor_future=neighbor_future, batch_size=batch_size, horizon=horizon,
                           num_historical_steps=history)

@@ -17,16 +17,15 @@ ends with ALL CHECKS PASSED.
 Runs in CAT-K's environment (Python 3.11, PyG, torch_cluster, TensorFlow
 for CAT-K's metrics module), from this repository's root:
 
-    CATK_ROOT=~/catk python -m scripts.smart.verify_adapter --ckpt ~/catk/ckpts/clsft_E9.ckpt \\
+    python -m scripts.smart.verify_adapter --ckpt ckpts/clsft_E9.ckpt \\
         --scenes raw_scenes_500 --n 3
-    CATK_ROOT=~/catk python -m scripts.smart.verify_adapter   # random weights, synthetic scene
+    python -m scripts.smart.verify_adapter   # random weights, synthetic scene
 
 Without --ckpt the weights are random (checks 1-5 still hold; the values of
 6 mean nothing). Without --scenes a synthetic two-lane scene is used.
 """
 
 import argparse
-import os
 import sys
 from pathlib import Path
 
@@ -74,7 +73,6 @@ def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     p.add_argument("--ckpt", default=None, help="SMART checkpoint (default: random weights).")
     p.add_argument("--model-config", default="smart")
-    p.add_argument("--catk-root", default=os.environ.get("CATK_ROOT"))
     p.add_argument("--scenes", default=None, help="CAT scene files (default: a synthetic scene).")
     p.add_argument("--n", type=int, default=3)
     p.add_argument("--step", type=int, default=20)
@@ -85,11 +83,9 @@ def main(argv=None):
 
     from responsibility.catk_export import numeric_id
     from responsibility.predictors.smart import load_smart_predictor
-    from responsibility.predictors.smart.catk import require_catk
     from responsibility.predictors.smart.scene_data import check_map
 
-    root = require_catk(args.catk_root)
-    predictor = load_smart_predictor(args.ckpt or "random", root, args.model_config, args.device,
+    predictor = load_smart_predictor(args.ckpt or "random", args.model_config, args.device,
                                      batch_size=args.samples)
     if not args.ckpt:
         print("random weights: checks 1-5 apply; the values of check 6 mean nothing")

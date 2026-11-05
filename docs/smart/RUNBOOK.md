@@ -7,7 +7,7 @@ design decision are documented in [docs/responsibility.md](docs/responsibility.m
 this file is the runbook.
 
 Target: Ubuntu 24.04, NVIDIA H200 (any recent NVIDIA GPU works the same way).
-All commands run from the repository root (`catk/`).
+All commands run from the repository root (`careful/`; CAT-K's code is its `catk/` package).
 
 ---
 
@@ -65,7 +65,7 @@ bash install/check_env.sh
 2. Cache the scenarios into the pickles SMART loads (one file per scenario):
 
    ```bash
-   python -m src.data_preprocess --split validation --num_workers 32 \
+   python -m catk.data_preprocess --split validation --num_workers 32 \
        --input_dir data/womd --output_dir data/womd_cache
    ```
 
@@ -291,7 +291,7 @@ Compare the fine-tuned model with the base one on held-out scenes:
 # its own samples, and responsibility-aware selection on top of them
 python -m scripts.smart.evaluate_selection --ckpt logs/responsibility/finetune/last.ckpt ...
 # closed-loop realism (WOSAC metrics), as scripts/local_val.sh runs it
-python -m src.run experiment=local_val trainer=default trainer.accelerator=gpu \
+python -m catk.run experiment=local_val trainer=default trainer.accelerator=gpu \
     trainer.devices=1 trainer.strategy=auto task_name=local_val_finetuned \
     ckpt_path=$PWD/logs/responsibility/finetune/last.ckpt
 ```

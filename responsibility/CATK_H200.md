@@ -1,5 +1,7 @@
 # 在另一台 GPU 服务器（如 H200）上跑 CAT-K / SMART 相关实验
 
+> 注（`careful` 仓库）：CAT-K 的代码已经放进仓库的 `catk/`（catk4test @ 1bc7e22，导入从 `src.` 改成 `catk.`），不再需要单独 clone catk4test，也不再用 `CATK_ROOT`、`--catk-root`；本文保留作为合并前的记录。现在的步骤见 `docs/RUNBOOK.md`。
+
 本文件列出本仓库里所有用到 CAT-K 的 SMART 的实验：要搬哪些东西，怎么装环境，每个实验的命令、产出和在 L4 上的耗时。实验的背景和结果在 `SMART_PLAN.md`，以及 README 的 "Does the verdict depend on the motion model? (SMART)" 和 "Can it judge aggression?" 两节。
 
 catk 仓库自己的实验（在 WOMD 上训练奖励网络、用责任奖励微调 SMART、WOSAC 评测）不在这里，见 catk 的 `README_responsibility.md`。它们需要 WOMD 的训练集（TB 级），和下面这些实验无关。

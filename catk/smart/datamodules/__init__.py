@@ -1,0 +1,1 @@
+from catk.smart.datamodules.scalable_datamodule import MultiDataModule

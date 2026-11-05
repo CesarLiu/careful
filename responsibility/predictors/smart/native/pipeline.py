@@ -37,17 +37,17 @@ from responsibility.predictors.smart.native.results_io import (  # noqa: F401  (
     scenario_files,
 )
 from responsibility.predictors.smart.native.reward_model import RewardNetBundle, train_reward_networks_per_level
-from responsibility.predictors.smart.catk import SMART_CONFIGS, require_catk
-from src.smart.datamodules.target_builder import WaymoTargetBuilderVal
-from src.smart.datasets.scalable_dataset import MultiDataset
-from src.smart.model.smart import SMART
+from catk import CONFIGS as CATK_CONFIGS
+from catk.smart.datamodules.target_builder import WaymoTargetBuilderVal
+from catk.smart.datasets.scalable_dataset import MultiDataset
+from catk.smart.model.smart import SMART
 
 
 def compose_responsibility_config(overrides: Optional[List[str]] = None) -> DictConfig:
     """Composes this repo's Hydra config tree (model, data, paths, trainer,
     hydra groups -- skipping callbacks/logger/experiment, which loading a
     checkpoint for inference does not need) via
-    ``responsibility/predictors/smart/configs/responsibility/eval.yaml``, and activates the global
+    ``catk/configs/responsibility/eval.yaml``, and activates the global
     ``HydraConfig`` singleton so ``SMART.__init__`` (which reads
     ``HydraConfig.get().runtime.output_dir``) works outside of a real
     ``hydra.main``-launched run.
@@ -61,12 +61,10 @@ def compose_responsibility_config(overrides: Optional[List[str]] = None) -> Dict
     first so ``run.dir``'s interpolations can resolve, then fill in and
     re-set ``runtime.output_dir``.
     """
-    # CAT-K's config tree (model, data, paths, trainer, hydra) plus this
-    # package's responsibility/eval.yaml, found through Hydra's search path.
-    with hydra.initialize_config_dir(version_base="1.3", config_dir=str(require_catk() / "configs")):
+    with hydra.initialize_config_dir(version_base="1.3", config_dir=str(CATK_CONFIGS)):
         cfg = hydra.compose(
             config_name="responsibility/eval",
-            overrides=[f"hydra.searchpath=[file://{SMART_CONFIGS}]"] + list(overrides or []),
+            overrides=overrides or [],
             return_hydra_config=True,
         )
     HydraConfig.instance().set_config(cfg)
@@ -79,7 +77,7 @@ def compose_responsibility_config(overrides: Optional[List[str]] = None) -> Dict
 
 def load_smart_model(model_config: DictConfig, ckpt_path: str, device: str = "cpu") -> SMART:
     """Loads a SMART checkpoint for inference-only use (no Trainer needed),
-    mirroring the weight-loading call in ``src/run.py``'s ``finetune`` action.
+    mirroring the weight-loading call in ``catk/run.py``'s ``finetune`` action.
 
     Fails loudly rather than returning a partly random model: every
     parameter must come from the checkpoint, and the decoder hyper-

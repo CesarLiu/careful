@@ -63,7 +63,7 @@ from responsibility.predictors.smart.native.pipeline import (  # noqa: E402
     resolve_device,
     scenario_files,
 )
-from src.smart.utils.finetune import set_model_for_finetuning  # noqa: E402
+from catk.smart.utils.finetune import set_model_for_finetuning  # noqa: E402
 
 
 def parse_args():

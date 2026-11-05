@@ -24,15 +24,13 @@ one scene -- are counted and left out.
 
 Runs in catk's environment (the observations hold torch tensors and catk's
 dataclass). Example (from this repository's root):
-    ~/venvs/catk/bin/python -m scripts.responsibility.import_catk --catk-root ~/catk \\
+    python -m scripts.responsibility.import_catk \\
         --run logs/catk/scenes/run --out-dir logs/catk/scenes/windows --data "CAT's scenes (WOMD v1.1)"
 """
 
 import argparse
 import csv
 import json
-import os
-import pickle
 import sys
 from collections import Counter
 from pathlib import Path
@@ -50,7 +48,6 @@ FIELDS = ["scene", "scenario_id", "agent_id", "step", "time", "speed", "safety",
 
 def parse_args(argv=None):
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--catk-root", default=os.environ.get("CATK_ROOT", str(Path.home() / "catk")))
     p.add_argument("--run", required=True, help="catk's output directory (obs/ and config.json).")
     p.add_argument("--scenes", default="raw_scenes_500")
     p.add_argument("--rollouts", default=None, help="The rollouts the run measured (run_smart.sh ROLLOUTS).")
@@ -82,7 +79,7 @@ def roles(scene):
 
 def main(argv=None):
     args = parse_args(argv)
-    sys.path.append(str(Path(args.catk_root).expanduser().resolve()))  # catk's dataclass, for unpickling
+    from responsibility.predictors.smart.native.results_io import load_pickle  # reads catk4test's pickles too
     run = Path(args.run)
     rollouts = {}
     if args.rollouts:
@@ -96,7 +93,7 @@ def main(argv=None):
     for f in files:
         stem = f.stem
         with open(f, "rb") as h:
-            observations = pickle.load(h)
+            observations = load_pickle(h)
         scene = Scene.load(Path(args.scenes) / f"{stem}.pkl")
         if stem in rollouts:
             scene = scene_from_rollout(scene, rollouts[stem])

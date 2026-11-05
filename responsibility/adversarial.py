@@ -323,7 +323,6 @@ def add_arguments(parser) -> None:
                         "DenseTNT NMS modes.")
     g.add_argument("--resp_checkpoint", default=None, help="--resp_model mtr / unitraj / smart: the checkpoint.")
     g.add_argument("--resp_unitraj_method", default=None, help="--resp_model unitraj: the UniTraj method config.")
-    g.add_argument("--resp_catk_root", default=None, help="--resp_model smart: the CAT-K checkout.")
 
 
 def make_adv_generator(parser):
@@ -380,7 +379,7 @@ class ResponsibleAdvGenerator(_base()):
 
             self.resp_model = load_predictor(self.args.resp_model, SimpleNamespace(
                 model=self.args.resp_model, checkpoint=self.args.resp_checkpoint,
-                unitraj_method=self.args.resp_unitraj_method, catk_root=self.args.resp_catk_root), device)
+                unitraj_method=self.args.resp_unitraj_method), device)
         self.cfg = ResponsibilityConfig(n_safety_samples=self.args.resp_samples,
                                         d_sat=self.args.resp_d_sat if self.args.resp_d_sat > 0 else None)
         self.storage = {}

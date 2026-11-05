@@ -8,7 +8,7 @@ roll out only the queried agent(s) while every other agent is teacher-
 forced onto its logged ground-truth continuation. We do this without
 touching model internals by temporarily monkey-patching the module-level
 ``sample_next_token_traj`` function that ``SMARTAgentDecoder.inference``
-calls once per step (see ``src/smart/modules/agent_decoder.py``): our
+calls once per step (see ``catk/smart/modules/agent_decoder.py``): our
 wrapper calls the original sampler (so attention/features are computed
 identically to a real rollout) and then overwrites the sampled token for
 every non-free agent with its ground-truth token for that step.
@@ -29,7 +29,7 @@ import torch
 from omegaconf import DictConfig
 from torch import Tensor
 
-import src.smart.modules.agent_decoder as agent_decoder_module
+import catk.smart.modules.agent_decoder as agent_decoder_module
 
 
 class _ForcedTokenSampler:

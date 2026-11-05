@@ -1,16 +1,15 @@
 #!/usr/bin/env bash
 # Packs what the CAT-K / SMART experiments need on another server and git does not carry
 # (responsibility/CATK_H200.md): the scenes, SMART's checkpoint, and the inputs of each
-# experiment. Code comes from git (this repository's counterfactual-responsibility branch and
-# CesarLiu/catk4test); nothing here is published (WOMD's terms cover the scenes and the model).
+# experiment. Code comes from git (this repository, which holds CAT-K's code in catk/);
+# nothing here is published (WOMD's terms cover the scenes and the model).
 #
-# The tar has three top folders, extracted separately on the server:
+# The tar has two top folders, extracted separately on the server:
 #   repo/   into this repository's root     tar xf PACK -C <repo> --strip-components=1 repo
-#   catk/   into the catk checkout           tar xf PACK -C <catk> --strip-components=1 catk
 #   womd/   anywhere (CAT's 497 WOMD v1.2.1 scenarios as one tfrecord)
 #
 # Parts (PARTS, default "core aggression compare rollouts v121"):
-#   core         raw_scenes_500/ (CAT's 500 scenes, 317 MB); catk/ckpts/clsft_E9.ckpt (68 MB)
+#   core         raw_scenes_500/ (CAT's 500 scenes, 317 MB); ckpts/clsft_E9.ckpt (68 MB)
 #   aggression   adv_scenes/cat/ (CAT's adversarial scenes, 317 MB) and
 #                logs/responsibility/validity/scenes/ (the other scene sets, 452 MB)
 #   compare      windows*.csv and config.json of the DenseTNT runs logs/responsibility/{sdc,adv}, and
@@ -30,7 +29,7 @@
 #   SCENES (raw_scenes_500)  CAT_SCENES (adv_scenes/cat)  VAL (logs/responsibility/validity)
 #   DTNT_RUNS (logs/responsibility)  ROLLOUTS (rollouts/replay)  CATK_LOGS (logs/catk)
 #   TFRECORD ($HOME/womd_v1_2_1/cat_extract/cat_scenarios_v121.tfrecord)
-#   DENSETNT (advgen/pretrained/densetnt.bin)  CATK_ROOT ($HOME/catk)
+#   DENSETNT (advgen/pretrained/densetnt.bin)  CKPT (ckpts/clsft_E9.ckpt)
 set -euo pipefail
 PARTS=${PARTS:-"core aggression compare rollouts v121"}
 OUT=${OUT:-catk_h200.tar}
@@ -42,7 +41,7 @@ ROLLOUTS=${ROLLOUTS:-rollouts/replay}
 CATK_LOGS=${CATK_LOGS:-logs/catk}
 TFRECORD=${TFRECORD:-$HOME/womd_v1_2_1/cat_extract/cat_scenarios_v121.tfrecord}
 DENSETNT=${DENSETNT:-advgen/pretrained/densetnt.bin}
-CATK_ROOT=${CATK_ROOT:-$HOME/catk}
+CKPT=${CKPT:-ckpts/clsft_E9.ckpt}
 
 stage=$(mktemp -d)
 trap 'rm -rf "$stage"' EXIT
@@ -55,7 +54,7 @@ for part in $PARTS; do
   case $part in
     core)
       link "$SCENES" repo/raw_scenes_500
-      link "$CATK_ROOT/ckpts/clsft_E9.ckpt" catk/ckpts/clsft_E9.ckpt ;;
+      link "$CKPT" repo/ckpts/clsft_E9.ckpt ;;
     aggression)
       link "$CAT_SCENES" repo/adv_scenes/cat
       link "$VAL/scenes" repo/logs/responsibility/validity/scenes ;;

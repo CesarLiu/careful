@@ -76,9 +76,9 @@ DT = 0.1  # seconds per 10Hz step
 VEHICLE, PEDESTRIAN, CYCLIST = 0, 1, 2
 TYPE_NAMES = {VEHICLE: "vehicle", PEDESTRIAN: "pedestrian", CYCLIST: "cyclist"}
 
-# cached map (src/smart/utils/preprocess.py::preprocess_map): polygon types
+# cached map (catk/smart/utils/preprocess.py::preprocess_map): polygon types
 PL_LANE, PL_CROSSWALK = 0, 3
-# point types (src/data_preprocess.py): 0 freeway, 1 surface street, 2 stop-sign lane
+# point types (catk/data_preprocess.py): 0 freeway, 1 surface street, 2 stop-sign lane
 PT_FREEWAY, PT_SURFACE, PT_STOP = 0, 1, 2
 VEHICLE_LANE_TYPES = (PT_FREEWAY, PT_SURFACE, PT_STOP)
 # light types: 0 NO_LANE_STATE, 1 UNKNOWN, 2 STOP, 3 GO, 4 CAUTION

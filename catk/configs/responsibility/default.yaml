@@ -45,7 +45,7 @@ reward_hidden_dim: 32 # two hidden layers of this width (paper: 32)
 reward_n_epochs: 300
 reward_lr: 0.001
 
-# --- motion-set sampling scheme (src/smart/utils/rollout.py) ---
+# --- motion-set sampling scheme (catk/smart/utils/rollout.py) ---
 motion_set_num_k: 2048 # ~= full agent-token vocabulary size -> approximates
 # genuine sampling from pi_theta rather than a narrow top-k
 motion_set_temp: 1.0

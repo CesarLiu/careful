@@ -3,7 +3,7 @@ responsibility implementation (the catk repository, src/responsibility)
 can measure the same scenes and rollouts as DenseTNT here
 (responsibility/SMART_PLAN.md).
 
-catk caches a WOMD scenario in two stages (src/data_preprocess.py):
+catk caches a WOMD scenario in two stages (catk/data_preprocess.py):
 ``decode_*_from_proto`` read the protobuf into plain arrays and lists
 (tracks, map polylines, traffic-light states), and ``get_agent_features``,
 ``get_map_features`` / ``process_dynamic_map`` and ``preprocess_map`` turn

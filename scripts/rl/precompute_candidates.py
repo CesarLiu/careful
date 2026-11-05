@@ -52,7 +52,6 @@ def main(argv=None):
                         "avoidability); the candidates stay CAT's DenseTNT modes. See responsibility/predictors.")
     p.add_argument("--resp_checkpoint", default=None)
     p.add_argument("--resp_unitraj_method", default=None)
-    p.add_argument("--resp_catk_root", default=None)
     p.add_argument("--out", required=True)
     args = p.parse_args(argv)
     cat_parser = argparse.ArgumentParser()
@@ -61,7 +60,7 @@ def main(argv=None):
     gen = ResponsibleAdvGenerator(cat_parser, argv=["--adv_selection", "fair", "--resp_threshold", args.resp_threshold,
                                                     "--resp_avoid", args.resp_avoid, "--resp_device", args.device,
                                                     "--resp_model", args.resp_model]
-                                  + [f for k in ("resp_checkpoint", "resp_unitraj_method", "resp_catk_root")
+                                  + [f for k in ("resp_checkpoint", "resp_unitraj_method")
                                      if getattr(args, k) for f in (f"--{k}", getattr(args, k))])
     files = scene_files(args.scenes)[args.first:]
     files = files[: args.n] if args.n is not None else files

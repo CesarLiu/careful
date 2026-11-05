@@ -80,7 +80,6 @@ def parse_args(argv=None):
     g.add_argument("--blame-model", default="densetnt", help="share: the predictor (responsibility/predictors).")
     g.add_argument("--blame-checkpoint", default=None)
     g.add_argument("--blame-unitraj-method", default=None)
-    g.add_argument("--blame-catk-root", default=None)
     g.add_argument("--blame-margin", type=float, default=None, help="m; default responsibility.blame.MARGIN")
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
@@ -135,8 +134,7 @@ def main(argv=None):
             from responsibility.predictors import load_predictor
 
             model = load_predictor(args.blame_model, SimpleNamespace(
-                model=args.blame_model, checkpoint=args.blame_checkpoint, unitraj_method=args.blame_unitraj_method,
-                catk_root=args.blame_catk_root), dev)
+                model=args.blame_model, checkpoint=args.blame_checkpoint, unitraj_method=args.blame_unitraj_method), dev)
         weighting = SimBlameWeighting(model, args.scenes, train_set.crash_penalty, args.blame_weighting,
                                       margin=MARGIN if args.blame_margin is None else args.blame_margin,
                                       log_path=out / "blame.csv")

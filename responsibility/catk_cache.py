@@ -1,5 +1,5 @@
 """catk's cached WOMD (``catk/data/womd_cache/<split>/<scenario_id>.pkl``, made by catk's
-src/data_preprocess.py) as a scene description in the MetaDrive layout ``Scene.from_description``
+catk/data_preprocess.py) as a scene description in the MetaDrive layout ``Scene.from_description``
 reads, so the open-loop tools (attribution, forced_yield, forced_merge, the aggression judge) run on
 catk's scenes as they are.
 

@@ -75,7 +75,7 @@ class ResponsibilityObservation:
     interaction: Optional[Dict[int, Dict[str, float]]] = None
 
 
-# Map encoding of src/data_preprocess.py: pt_token.pl_type indexes
+# Map encoding of catk/data_preprocess.py: pt_token.pl_type indexes
 # ["lane", "road_edge", "road_line", "crosswalk"]; pt_token.type is the
 # point type, of which 0 (freeway) and 1 (surface street) are vehicle lanes
 # (3 is a bike lane; 4-5 road edges, 6-8 road lines, 9 crosswalks).

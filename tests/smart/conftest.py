@@ -1,12 +1,12 @@
 """Test scaffolding for the SMART-dependent responsibility modules.
 
 ``responsibility/predictors/smart/native/motion_set.py`` imports
-``src.smart.modules.agent_decoder`` at module level so it can monkey-patch
+``catk.smart.modules.agent_decoder`` at module level so it can monkey-patch
 that module's ``sample_next_token_traj``. The real module pulls in
 torch_cluster/torch_geometric, and exercising it would need a trained
 checkpoint, so we register a deterministic stub under that name *before*
-any test imports ``motion_set``. Both ``src.smart`` and
-``src.smart.modules`` are empty packages, so only the leaf needs stubbing.
+any test imports ``motion_set``. Both ``catk.smart`` and
+``catk.smart.modules`` are empty packages, so only the leaf needs stubbing.
 
 The stub lets us unit-test the parts of the counterfactual machinery that
 are ours rather than SMART's: the ground-truth token forcing, its per-step
@@ -74,32 +74,15 @@ def row_indexed_sampler(
 
 
 def _install_agent_decoder_stub():
-    # `import src.smart.modules.agent_decoder as m` short-circuits on the full
+    # `import catk.smart.modules.agent_decoder as m` short-circuits on the full
     # name in sys.modules and then walks the attribute chain, so the parent
-    # package must be imported (it is an empty module, no heavy deps) and must
-    # carry the stub as an attribute.
-    # Without a CAT-K checkout on the path, the (empty) parent packages are
-    # registered as stand-ins too.
-    import importlib
+    # package (catk/smart/modules/__init__.py, empty: no PyG) is imported and
+    # must carry the stub as an attribute.
+    import catk.smart.modules as modules_pkg
 
-    import responsibility.predictors.smart.catk  # noqa: F401  (puts $CATK_ROOT on sys.path if there is one)
-
-    try:
-        modules_pkg = importlib.import_module("src.smart.modules")
-    except ImportError:
-        parent = None
-        for name in ("src", "src.smart", "src.smart.modules"):
-            mod = sys.modules.get(name) or types.ModuleType(name)
-            mod.__path__ = getattr(mod, "__path__", [])
-            sys.modules[name] = mod
-            if parent is not None:
-                setattr(parent, name.rsplit(".", 1)[1], mod)
-            parent = mod
-        modules_pkg = sys.modules["src.smart.modules"]
-
-    module = types.ModuleType("src.smart.modules.agent_decoder")
+    module = types.ModuleType("catk.smart.modules.agent_decoder")
     module.sample_next_token_traj = _stub_sample_next_token_traj
-    sys.modules["src.smart.modules.agent_decoder"] = module
+    sys.modules["catk.smart.modules.agent_decoder"] = module
     modules_pkg.agent_decoder = module
     return module
 

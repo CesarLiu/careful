@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this repository is
 
-Counterfactual responsibility (Hsu et al., IROS 2023) for driving, independent of the motion predictor. It merges two implementations that differed only in the predictor: `CesarLiu/catspond` (branch `gpudrive-ppo`: CAT's DenseTNT and UniTraj's MTR, with CAT's TD3 training in MetaDrive; its GPUDrive PPO port, `gpucat/`, is not on this branch) and `CesarLiu/catk4test` (CAT-K's SMART). `README.md` describes the layout, the predictor interface and the two RL training loops (CAT's TD3 on the MetaDrive-free log-replay simulator `rl/`, SMART reward fine-tuning). Everything runs in CAT-K's Python 3.11 environment; MetaDrive (no Python 3.11 support) and GPUDrive are not used. The metrics are used for three things:
+Counterfactual responsibility (Hsu et al., IROS 2023) for driving, independent of the motion predictor. It merges two implementations that differed only in the predictor: `CesarLiu/catspond` (branch `gpudrive-ppo`: CAT's DenseTNT and UniTraj's MTR, with CAT's TD3 training in MetaDrive; its GPUDrive PPO port, `gpucat/`, is not on this branch) and `CesarLiu/catk4test` (CAT-K's SMART). `README.md` describes the layout, the predictor interface and the two RL training loops (CAT's TD3 on the MetaDrive-free log-replay simulator `rl/`, SMART reward fine-tuning). Everything runs in one Python 3.11 environment (`install/setup_server.sh`, CAT-K's); MetaDrive (no Python 3.11 support) and GPUDrive are not used. CAT-K's code itself is the `catk/` package (catk4test @ 1bc7e22, imports renamed `src.` → `catk.`; CAT-K is no longer updated). The metrics are used for three things:
 
 - measuring how aggressively or timidly a driver behaves;
 - constraining CAT's adversary to "fair" (responsible and avoidable) trajectories;
@@ -21,7 +21,7 @@ When you finish a milestone, update its status block and the README in the same 
 
 ## Environment and commands
 
-One environment: CAT-K's Python 3.11 (`~/venvs/catk`, CAT-K's `install/setup_server.sh`), prepared by `bash scripts/setup_catk_env.sh` (adds `cython<3`, builds `advgen/utils_cython` for 3.11 -- git holds only the 3.9 build --, adds UniTraj's h5py/einops/pytorch_lightning, runs the tests). There is no lint or format config.
+One environment: Python 3.11 (`~/venvs/catk`, made by `install/setup_server.sh`), completed by `bash scripts/setup_catk_env.sh` (adds `cython<3`, builds `advgen/utils_cython` for 3.11 -- git holds only the 3.9 build --, adds UniTraj's h5py/einops/pytorch_lightning, runs the tests). There is no lint or format config.
 
 ```bash
 source ~/venvs/catk/bin/activate && bash scripts/setup_catk_env.sh
@@ -34,7 +34,7 @@ python -m scripts.responsibility.verify_densetnt --n 3 --device cuda      # need
 
 - `test_adversarial.py` and `test_benchmark.py` import TensorFlow. Without it they skip or fail to collect.
 - `test_unitraj.py` skips unless `UNITRAJ_ROOT` points at a UniTraj checkout (its dataset code also needs `metadrive/type.py`: CAT's `metadrive/` at the root or an installed MetaDrive).
-- `tests/smart` stubs `src.smart.modules.agent_decoder` (conftest), so it runs without CAT-K, and is skipped where omegaconf is missing (the Python 3.9 CAT env). `scripts/smart/verify_adapter.py` checks `SmartPredictor` against a real (or `--ckpt random`) SMART in CAT-K's environment; `scripts/smart/compare_adapter_native.py` compares it with the native pipeline on the same neighbours, against seed noise.
+- `tests/smart` stubs `catk.smart.modules.agent_decoder` (conftest), so it runs without PyG, and is skipped where omegaconf is missing (the Python 3.9 CAT env). `scripts/smart/verify_adapter.py` checks `SmartPredictor` against a real (or `--ckpt random`) SMART in CAT-K's environment; `scripts/smart/compare_adapter_native.py` compares it with the native pipeline on the same neighbours, against seed noise.
 - `docs/RUNBOOK.md` is the server checklist after the merge; `scripts/responsibility/regress_run.py` checks that a new run reproduces an old one window for window.
 - CAT-K's map preprocessing drops polylines spaced over 3 m (it expects WOMD's 0.5 m); synthetic scenes for SMART must use 0.5 m spacing (`scene_data.check_map` warns).
 - Always run from the repository root, and run scripts as modules (`python -m scripts.responsibility.<name>`). Scripts insert the repo root into `sys.path`.
@@ -42,7 +42,8 @@ python -m scripts.responsibility.verify_densetnt --n 3 --device cuda      # need
 Several things are not in git and are usually **absent on a dev machine**:
 
 - downloaded separately (see `docs/CAT_README.md`): the modified `metadrive/` package, `raw_scenes_500/*.pkl` (the scenes) and `advgen/pretrained/densetnt.bin`;
-- more scenes: CAT's WOMD converters (`scripts/convert_WOMD_to_MD.py`, `scripts/select_cases.py`, `scripts/responsibility/convert_womd_split.py`) need the metadrive package and are not on this branch (they are on `main`). In the CAT-K environment, scenes from WOMD come through CAT-K's own cache (`src/data_preprocess.py`) read by `responsibility/catk_cache.py`, whose maps are rebuilt from SMART's tokens (lane ids and connections approximate, lights held from 1.0 s);
+- more scenes: CAT's WOMD converters (`scripts/convert_WOMD_to_MD.py`, `scripts/select_cases.py`, `scripts/responsibility/convert_womd_split.py`) need the metadrive package and are not on this branch (they are on `main`). In the CAT-K environment, scenes from WOMD come through CAT-K's own cache (`catk/data_preprocess.py`) read by `responsibility/catk_cache.py`, whose maps are rebuilt from SMART's tokens (lane ids and connections approximate, lights held from 1.0 s);
+- SMART checkpoints in `ckpts/` and CAT-K's WOMD caches in `data/` (both gitignored);
 - produced on the server: `logs/` (gitignored) and `rollouts/` (not ignored, so don't commit it).
 
 CAT's MetaDrive closed loop (`cat_RLtrain.py`, `cat_advgen.py`, `saferl_*`, `collect_rollouts.py`, `verify_adv_export.py`, `run_rl.sh`, `run_eval.sh`; the plans mark these 🖥) was removed on this branch (it is on `main`); the plans and `RUNBOOK_H200.md` still describe it as history. Training is `scripts/rl/train_td3.py` on `rl/sim.py`; GPU and data steps are in `docs/RUNBOOK.md`. Nothing on this branch imports MetaDrive (UniTraj only reads `metadrive/type.py`).
@@ -71,7 +72,7 @@ The pipeline is: scene → motion model → metrics → per-run outputs → summ
   - optionally `nms_motion_set(dist, n)`: n goals spread by CAT's goal NMS, each weighted by the probability nearest to it (`--motion-set nms`, `modes.py`).
   - `densetnt.py` wraps CAT's DenseTNT and reproduces its inputs exactly. It runs **one instance per forward pass**, because advgen's batching leaks padding into the attention.
   - `unitraj.py` adapts any UniTraj method (`mtr_predictor` keeps MTR's 64 intentions; `unitraj_predictor` calls any other method's forward) without patching UniTraj (it crops windows and injects a `scenarionet` stand-in). Removing an agent is done with masks, not by deleting the track.
-  - `smart/adapter.py` (`SmartPredictor`) samples SMART rollouts with CAT-K's machinery (`smart/native/motion_set.py`): the free agent sampled, the others teacher-forced and, by default, hidden after k. A distribution is a recipe, not probabilities, so SMART supports `sampled` motion sets and the `boltzmann`/`demand` courtesy only. Rollouts are cut where the clip's log ends (`max_horizon`). `smart/native/` is catk4test's batched pipeline (exact token courtesy, reward networks, fine-tuning), driven by `scripts/smart/*`; CAT-K's `src.smart` is imported from `$CATK_ROOT`, never vendored.
+  - `smart/adapter.py` (`SmartPredictor`) samples SMART rollouts with CAT-K's machinery (`smart/native/motion_set.py`): the free agent sampled, the others teacher-forced and, by default, hidden after k. A distribution is a recipe, not probabilities, so SMART supports `sampled` motion sets and the `boltzmann`/`demand` courtesy only. Rollouts are cut where the clip's log ends (`max_horizon`). `smart/native/` is catk4test's batched pipeline (exact token courtesy, reward networks, fine-tuning), driven by `scripts/smart/*`. SMART itself is the in-repo `catk` package (`catk.smart`, `catk.data_preprocess`, training `python -m catk.run`, Hydra configs in `catk/configs/`, including `responsibility/eval.yaml`); `results_io.load_pickle` reads results catk4test pickled under `src.*` module names.
   - `constant_velocity.py` is the dependency-free reference and the template for new adapters.
   - `tests/responsibility/conftest.py` has `FakeModel` and `make_scene`/`track` for synthetic tests.
 - **`metrics.py`** computes the metrics at each context step k.
@@ -93,7 +94,7 @@ The pipeline is: scene → motion model → metrics → per-run outputs → summ
   - Run and model names encode the settings (e.g. `cat_fair1_0.3_share_s0`), and `compare_policies` averages seeds by parsing the `_s<seed>` suffix.
   - Swapping ego and adversary is a relabelling of the scenes (`swap.py`, `scripts/responsibility/swap_roles.py` → `raw_scenes_500_swapped`), read by `cat_advgen.py`/`cat_RLtrain.py --scenes_dir` (not `--data_dir`: advgen owns that name). A scene folder must hold only scene `.pkl` files: MetaDrive asserts it.
 
-Upstream CAT code is `advgen/`. Keep changes there minimal. Code from catk4test (`responsibility/predictors/smart/native/`, `scripts/smart/`, `tests/smart/`, `docs/smart/`, `skills/`) is under the NVIDIA Source Code License for CAT-K (`LICENSE.CATK`). `cat_RLtrain.py` is indented with tabs; match that when you edit it. `rl/geometry.py` and `rl/adversary.py` came from the GPUDrive port (`gpucat/` on `main`).
+Upstream code is CAT's `advgen/` and CAT-K's `catk/`. Keep changes there minimal. Code from catk4test (`catk/`, `install/`, `scripts/catk/`, `responsibility/predictors/smart/native/`, `scripts/smart/`, `tests/smart/`, `docs/smart/`, `skills/`) is under the NVIDIA Source Code License for CAT-K (`LICENSE.CATK`). `cat_RLtrain.py` is indented with tabs; match that when you edit it. `rl/geometry.py` and `rl/adversary.py` came from the GPUDrive port (`gpucat/` on `main`).
 
 ## Conventions
 

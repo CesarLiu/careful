@@ -4,7 +4,7 @@
   --model densetnt           CAT's pretrained DenseTNT (default)
   --model mtr                UniTraj's MTR, --checkpoint
   --model unitraj            any UniTraj method, --checkpoint --unitraj-method <wayformer|autobot|...>
-  --model smart              CAT-K's SMART, --checkpoint --catk-root
+  --model smart              CAT-K's SMART (the catk package), --checkpoint
   --model constant_velocity  kinematic reference (no model, no dependencies)
   --model pkg.module:factory a predictor of your own
 
@@ -13,7 +13,6 @@ config.json; for densetnt and mtr it is unchanged from before the predictors
 were split out, so older runs resume.
 """
 
-import os
 from typing import Dict
 
 from responsibility.predictors import (load_predictor, predictor_names, predictor_settings,  # noqa: F401
@@ -33,8 +32,6 @@ def add_model_arguments(parser) -> None:
     g.add_argument("--temperature", type=float, default=None,
                    help="mtr / unitraj: softmax temperature of the mode scores (default: the checkpoint's "
                         "calibration file, else 1).")
-    g.add_argument("--catk-root", default=os.environ.get("CATK_ROOT"),
-                   help="smart: the CAT-K checkout (default $CATK_ROOT).")
     g.add_argument("--smart-config", default="smart", help="smart: the configs/model/<name>.yaml of the checkpoint.")
     g.add_argument("--smart-neighbor-future", default="hidden", choices=["hidden", "logged", "simulated"],
                    help="smart: what the sampled agent sees of the others' future (hidden = open loop).")

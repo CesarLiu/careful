@@ -21,13 +21,14 @@ git clone git@github.com:CesarLiu/careful.git ~/careful
 cd ~/careful
 ```
 
-不在 git 里的文件，从原来的 catspond 目录链接过来（假设它在 `~/catspond`，CAT-K 在 `~/catk`）：
+CAT-K 的代码已经在仓库的 `catk/` 里，不再需要单独的 CAT-K checkout。不在 git 里的数据和检查点，从原来的目录链接过来（假设 catspond 在 `~/catspond`，原来的 CAT-K checkout 在 `~/catk`）：
 
 ```bash
 ln -s ~/catspond/raw_scenes_500 raw_scenes_500
 ln -s ~/catspond/advgen/pretrained advgen/pretrained   # densetnt.bin
 ln -s ~/catspond/metadrive metadrive                   # 只有 UniTraj 需要：它从这里读 metadrive/type.py（纯 Python，不导入 MetaDrive）
-export CATK_ROOT=~/catk                                # 带 src/smart、configs/、ckpts/ 的 CAT-K checkout
+ln -s ~/catk/ckpts ckpts                               # SMART 检查点：clsft_E9.ckpt、pre_bc_E31.ckpt
+ln -s ~/catk/data data                                 # CAT-K 的 WOMD 缓存（第 5 步以外用不到）
 export UNITRAJ_ROOT=~/UniTraj                          # 只有 MTR / UniTraj 需要
 ```
 
@@ -36,20 +37,21 @@ export UNITRAJ_ROOT=~/UniTraj                          # 只有 MTR / UniTraj �
 ```bash
 ls raw_scenes_500 | wc -l                  # 500
 ls -la advgen/pretrained/densetnt.bin      # ~125 MB
-ls $CATK_ROOT/ckpts/                       # clsft_E9.ckpt、pre_bc_E31.ckpt
-ls $CATK_ROOT/src/smart/tokens/*.pkl       # 3 个 token 文件（真实文件，不是 LFS 指针）
+ls ckpts/                                  # clsft_E9.ckpt、pre_bc_E31.ckpt
+ls catk/smart/tokens/*.pkl                  # 3 个 token 文件（在 git 里）
 ```
 
-## 1. 环境：只用 catk（约 10 分钟）
+## 1. 环境：一个 Python 3.11 环境（约 10 分钟；新建的话约 30 分钟）
 
-在 CAT-K 已经装好的环境（`install/setup_server.sh`）里补上这个仓库需要的东西：
+服务器上已经有 CAT-K 的环境 `~/venvs/catk` 时，直接用它。没有的话，先用仓库里的安装脚本（原来是 CAT-K 的）新建：
 
 ```bash
+bash install/setup_server.sh          # 已有 ~/venvs/catk 时跳过
 source ~/venvs/catk/bin/activate
 bash scripts/setup_catk_env.sh
 ```
 
-脚本做了这些事：
+`setup_catk_env.sh` 做了这些事：
 - 装 `cython<3`，然后为 Python 3.11 编译 `advgen/utils_cython`（git 里只有 3.9 的版本），DenseTNT 的输入构造要用它；
 - 装 UniTraj 要用的 h5py、einops、pytorch_lightning（`WITH_UNITRAJ=0` 可以跳过）；
 - 打印关键包的版本，跑一遍单元测试。
@@ -101,7 +103,7 @@ done
 
 ```bash
 source ~/venvs/catk/bin/activate
-python -m scripts.smart.verify_adapter --ckpt $CATK_ROOT/ckpts/clsft_E9.ckpt --scenes raw_scenes_500 --n 5 --device cuda
+python -m scripts.smart.verify_adapter --ckpt ckpts/clsft_E9.ckpt --scenes raw_scenes_500 --n 5 --device cuda
 ```
 
 验收：每个场景 7 项全部 `PASS`，末尾是 `ALL CHECKS PASSED`。
@@ -126,7 +128,7 @@ python -m scripts.smart.verify_adapter --ckpt $CATK_ROOT/ckpts/clsft_E9.ckpt --s
 
 ```bash
 source ~/venvs/catk/bin/activate
-python -m scripts.smart.compare_adapter_native --ckpt $CATK_ROOT/ckpts/clsft_E9.ckpt \
+python -m scripts.smart.compare_adapter_native --ckpt ckpts/clsft_E9.ckpt \
     --scenes raw_scenes_500 --n 20 --agent sdc adv --device cuda \
     --out-dir logs/smart/compare_adapter_native 2>&1 | tee logs/smart/compare_adapter_native.log
 ```
@@ -177,7 +179,7 @@ python -m scripts.smart.compare_adapter_native --ckpt $CATK_ROOT/ckpts/clsft_E9.
 MODEL=constant_velocity OUT=logs/responsibility/cv AGENTS="sdc adv" SHARDS=16 bash scripts/responsibility/run_h200.sh
 
 # SMART 走通用路径，设置与 DenseTNT 的主实验相同（第 3 步）
-MODEL=smart CHECKPOINT=$CATK_ROOT/ckpts/clsft_E9.ckpt OUT=logs/responsibility/smart AGENTS="sdc adv" SHARDS=8 \
+MODEL=smart CHECKPOINT=ckpts/clsft_E9.ckpt OUT=logs/responsibility/smart AGENTS="sdc adv" SHARDS=8 \
     bash scripts/responsibility/run_h200.sh
 
 # 两两对照

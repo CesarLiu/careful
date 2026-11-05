@@ -28,7 +28,7 @@ import numpy as np
 
 TYPES = {0: "lane freeway", 1: "lane street", 2: "lane stop sign", 3: "bike lane / edge unknown",
          4: "edge boundary", 5: "edge median", 6: "line broken", 7: "line solid single", 8: "line double",
-         9: "crosswalk/bump/driveway"}  # catk's point types (src/data_preprocess.py)
+         9: "crosswalk/bump/driveway"}  # catk's point types (catk/data_preprocess.py)
 
 
 def parse_args(argv=None):

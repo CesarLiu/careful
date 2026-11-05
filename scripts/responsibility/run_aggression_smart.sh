@@ -26,7 +26,7 @@
 #
 # variables (defaults): VAL (logs/responsibility/validity), SCENES (raw_scenes_500),
 # CAT_SCENES (adv_scenes/cat), N (100), SETS (all six), SHARDS (2), BATCH (32),
-# CATK_ROOT ($HOME/catk), PYTHON (catk's: $HOME/venvs/catk/bin/python), CKPT (run_smart.sh's)
+# PYTHON (python), CKPT (run_smart.sh's)
 set -euo pipefail
 VAL=${VAL:-logs/responsibility/validity}
 SCENES=${SCENES:-raw_scenes_500}
@@ -34,10 +34,8 @@ CAT_SCENES=${CAT_SCENES:-adv_scenes/cat}
 N=${N:-100}
 SETS=${SETS:-"logged cat near0_1000 near1_0.5 fairinf_0.5 near30_0.5"}
 SHARDS=${SHARDS:-2}
-CATK_ROOT=${CATK_ROOT:-$HOME/catk}
-PYTHON=${PYTHON:-$HOME/venvs/catk/bin/python}
-export CATK_ROOT PYTHON
-repo=$(pwd)
+PYTHON=${PYTHON:-python}
+export PYTHON
 val=$(realpath -m "$VAL")
 
 declare -A ADV=([logged]=adv_logged [cat]=adv_cat [near0_1000]=adv_mode [near1_0.5]=adv_near1
@@ -60,7 +58,7 @@ for s in $SETS; do
     SCENES=$folder N=$N OUT=$out SHARDS=$SHARDS BATCH=${BATCH:-32} bash scripts/responsibility/run_smart.sh
   fi
   echo "== $s: import -> runs/smart/${ADV[$s]}, ${SDC[$s]}"
-  (cd "$CATK_ROOT" && TF_CPP_MIN_LOG_LEVEL=3 "$PYTHON" "$repo/scripts/responsibility/import_catk_obs.py" \
-      "$out/run" "$folder" "$val/runs/smart/${ADV[$s]}" "$val/runs/smart/${SDC[$s]}" --n "$N")
+  TF_CPP_MIN_LOG_LEVEL=3 "$PYTHON" -m scripts.responsibility.import_catk_obs \
+      "$out/run" "$folder" "$val/runs/smart/${ADV[$s]}" "$val/runs/smart/${SDC[$s]}" --n "$N"
 done
 echo "== done; next: python -m scripts.responsibility.evaluate_aggression --config smart --frame-s 0.5 --cat-scenes $CAT_SCENES"

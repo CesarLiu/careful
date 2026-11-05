@@ -48,8 +48,10 @@ responsibility/                 predictor-agnostic metrics and tools (operate on
     smart/                      CAT-K's SMART
       adapter.py                SmartPredictor: the interface over SMART rollouts
       scene_data.py             Scene -> CAT-K's PyG batch, in memory
-      catk.py, configs/         finding the CAT-K checkout; Hydra config over its configs/
       native/                   CAT-K's own batched pipeline (from catk4test src/responsibility)
+catk/                           CAT-K (catk4test @ 1bc7e22): SMART, WOMD preprocessing, training (run.py, configs/)
+install/                        the Python 3.11 environment (setup_server.sh, requirements, check_env.sh)
+scripts/catk/                   CAT-K's train.sh, local_val.sh, cache_womd.sh, wosac_sub.sh
 rl/                             MetaDrive-free CAT training: log-replay simulator, batched adversary, TD3, blame weighting
 scripts/rl/                     build the scene bank, precompute CAT's candidates, check the simulator, train TD3
 advgen/                         CAT's DenseTNT and adversary generator (upstream code)
@@ -89,7 +91,7 @@ unsupported option before a run starts.
 | `densetnt` (default) | CAT's pretrained DenseTNT, goal grid + completion | TensorFlow, `advgen/utils_cython` built for the Python in use (`scripts/setup_catk_env.sh`), `advgen/pretrained/densetnt.bin` | sampled, weighted, top-k, NMS | yes (shared goal grid) |
 | `mtr` | UniTraj MTR, all 64 intention queries | UniTraj checkout (`$UNITRAJ_ROOT`), its CUDA ops, `--checkpoint` | sampled, weighted, top-k, NMS | yes (fixed intention points) |
 | `unitraj` | any UniTraj method through its own forward pass (`--unitraj-method wayformer\|autobot\|EMP\|forecast\|SMART`) | UniTraj checkout, `--checkpoint` | sampled, weighted, top-k, NMS | formally; modes are not fixed points, so prefer `boltzmann` |
-| `smart` | CAT-K SMART rollouts, the others teacher-forced and hidden after k (`--smart-neighbor-future`) | CAT-K checkout (`$CATK_ROOT`), Python 3.11, PyG 2.6.1, torch_cluster, `--checkpoint` | sampled | no: `boltzmann` or `demand`, or the native pipeline's `exact` |
+| `smart` | CAT-K SMART rollouts, the others teacher-forced and hidden after k (`--smart-neighbor-future`) | the `catk` package (in this repository), PyG 2.6.1, torch_cluster, `--checkpoint` | sampled | no: `boltzmann` or `demand`, or the native pipeline's `exact` |
 | `constant_velocity` | kinematic reference, ignores map and agents | nothing | sampled, weighted, top-k, NMS | yes (is 0) |
 | `pkg.module:factory` | your own: `factory(args, device)` returns a predictor | yours | what it implements | if it implements `with_and_without` |
 
@@ -125,8 +127,8 @@ UNITRAJ_ROOT=~/UniTraj python -m scripts.responsibility.compute_responsibility -
 UNITRAJ_ROOT=~/UniTraj python -m scripts.responsibility.compute_responsibility --out-dir logs/resp/wayformer \
     --model unitraj --unitraj-method wayformer --checkpoint ckpts/wayformer.ckpt --device cuda
 # SMART through the same code path (CAT-K's environment)
-CATK_ROOT=~/catk python -m scripts.responsibility.compute_responsibility --out-dir logs/resp/smart \
-    --model smart --checkpoint ~/catk/ckpts/clsft_E9.ckpt --device cuda
+python -m scripts.responsibility.compute_responsibility --out-dir logs/resp/smart \
+    --model smart --checkpoint ckpts/clsft_E9.ckpt --device cuda
 # compare two predictors' windows
 python -m scripts.responsibility.compare_models --help
 ```
@@ -142,16 +144,17 @@ run the same way.
 (`geometry`, `risk` and `hmm` are the shared ones). It packs many
 counterfactual jobs into one SMART call and implements what only a token model
 can do: the exact per-token courtesy KL, per-level reward networks,
-responsibility-aware candidate selection and reward fine-tuning. It reads CAT-K's
-WOMD cache directly:
+responsibility-aware candidate selection and reward fine-tuning. SMART itself --
+the model, WOMD preprocessing and training -- is CAT-K's code, in the `catk`
+package (catk4test @ 1bc7e22, imports renamed from `src.` to `catk.`; CAT-K is
+no longer updated). The pipeline reads CAT-K's WOMD cache directly:
 
 ```bash
-export CATK_ROOT=~/catk     # any CAT-K checkout with src/smart and configs/
-python -m scripts.smart.compute_responsibility --ckpt $CATK_ROOT/ckpts/clsft_E9.ckpt \
-    --data-root $CATK_ROOT/data/womd_cache/validation --out-dir logs/smart/val --courtesy-estimator exact
+python -m scripts.smart.compute_responsibility --ckpt ckpts/clsft_E9.ckpt \
+    --data-root data/womd_cache/validation --out-dir logs/smart/val --courtesy-estimator exact
 python -m scripts.smart.verify_counterfactuals --help
-python -m scripts.smart.verify_adapter --ckpt $CATK_ROOT/ckpts/clsft_E9.ckpt --scenes raw_scenes_500 --n 3
-python -m scripts.smart.compare_adapter_native --ckpt $CATK_ROOT/ckpts/clsft_E9.ckpt --scenes raw_scenes_500 \
+python -m scripts.smart.verify_adapter --ckpt ckpts/clsft_E9.ckpt --scenes raw_scenes_500 --n 3
+python -m scripts.smart.compare_adapter_native --ckpt ckpts/clsft_E9.ckpt --scenes raw_scenes_500 \
     --n 20 --agent sdc adv --out-dir logs/smart/compare_adapter_native   # adapter vs native, within seed noise?
 ```
 
@@ -194,7 +197,7 @@ python -m scripts.rl.precompute_candidates --scenes raw_scenes_500 --out logs/rl
 python -m scripts.rl.check_sim --bank logs/rl/scenes.npz --candidates logs/rl/candidates.npz --device cuda
 # CAT's adversary, collision penalty weighted by the counterfactual blame (here with SMART)
 python -m scripts.rl.train_td3 --bank logs/rl/scenes.npz --candidates logs/rl/candidates.npz --mode cat \
-    --blame-weighting share --blame-model smart --blame-checkpoint $CATK_ROOT/ckpts/clsft_E9.ckpt \
+    --blame-weighting share --blame-model smart --blame-checkpoint ckpts/clsft_E9.ckpt \
     --out logs/rl/runs/cat_share_s0 --seed 0 --device cuda --save-model
 ```
 
@@ -209,23 +212,24 @@ evaluation scripts (`cat_RLtrain.py`, `cat_advgen.py`, `saferl_algo/`,
 
 ## Environments
 
-Everything runs in CAT-K's Python 3.11 environment (CAT-K's
-`install/setup_server.sh`, then this repository's
-`scripts/setup_catk_env.sh`):
+Everything runs in one Python 3.11 environment: `install/setup_server.sh`
+(CAT-K's, now in this repository) creates it, `scripts/setup_catk_env.sh`
+completes it:
 
 ```bash
+bash install/setup_server.sh            # ~/venvs/catk: Python 3.11, torch 2.4.1, PyG 2.6.1, TensorFlow 2.12
 source ~/venvs/catk/bin/activate
 bash scripts/setup_catk_env.sh
 ```
 
-The setup script adds `cython<3`, then builds `advgen/utils_cython` for
+The second script adds `cython<3`, then builds `advgen/utils_cython` for
 Python 3.11 (the repository ships only the 3.9 build). It also installs
 UniTraj's extra packages (h5py, einops, pytorch_lightning) and runs the tests.
 
-| predictor or loop | needs in the CAT-K environment |
+| predictor or loop | needs in this environment |
 |---|---|
 | DenseTNT | the 3.11 build of `advgen/utils_cython`, TensorFlow (CAT-K has 2.12), `advgen/pretrained/densetnt.bin` |
-| SMART | `CATK_ROOT` (a CAT-K checkout) and a checkpoint |
+| SMART | a checkpoint (`ckpts/`, not in git); the code is the `catk` package |
 | UniTraj (Wayformer, AutoBot, ...) | `UNITRAJ_ROOT`, the UniTraj extras; MTR also its CUDA ops, built in this environment |
 | TD3 training (`rl/`) | nothing more: plain torch |
 
@@ -270,10 +274,11 @@ measures a trained model. The measured results in `responsibility/README.md`,
 
 ## Licences
 
-The code from catspond and CAT is MIT-licensed (`LICENSE`). The files moved from
-catk4test (`responsibility/predictors/smart/native/`, `scripts/smart/`,
-`tests/smart/`, `docs/smart/`, `skills/`) came from a repository under the
-NVIDIA Source Code License for CAT-K, a copy of which is in `LICENSE.CATK`
-(non-commercial use; redistribution under the same licence). CAT-K's SMART
-model code itself is not included: it is imported from a CAT-K checkout at run
-time.
+The code from catspond and CAT is MIT-licensed (`LICENSE`). Everything from
+catk4test -- CAT-K itself (`catk/`, `install/`, `scripts/catk/`) and its
+responsibility code (`responsibility/predictors/smart/native/`, `scripts/smart/`,
+`tests/smart/`, `docs/smart/`, `skills/`) -- is under the NVIDIA Source Code
+License for CAT-K, a copy of which is in `LICENSE.CATK` (non-commercial use;
+redistribution under the same licence); SMART's own code also under Apache 2.0
+(`catk/smart/LICENSE.SMART`). UniTraj (AGPLv3) is not included: it is imported
+from a checkout (`UNITRAJ_ROOT`) or an installed `unitraj` package.

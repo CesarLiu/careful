@@ -19,8 +19,8 @@ from pathlib import Path
 
 import numpy as np
 
-sys.path.insert(0, ".")  # the catk root (run from it)
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from responsibility.predictors.smart.native.results_io import load_pickle  # noqa: E402
 from responsibility.scene import Scene  # noqa: E402
 
 p = argparse.ArgumentParser()
@@ -41,7 +41,7 @@ for s in range(a.n):
     adv = [i for i in scene.objects_of_interest if i != scene.sdc][0]
     role = {str(scene.track_ids[scene.sdc]): (scene.sdc, a.out_sdc), str(scene.track_ids[adv]): (adv, a.out_adv)}
     per_role = {a.out_adv: [], a.out_sdc: []}
-    for o in pickle.load(open(f, "rb")):
+    for o in load_pickle(open(f, "rb")):
         r = role.get(str(o.agent_id))
         if r is None:
             continue

@@ -32,7 +32,7 @@ else could agent *a* have done, holding the rest of the real scene fixed."
 
 We reconcile these by temporarily monkey-patching the module-level
 `sample_next_token_traj` function that `SMARTAgentDecoder.inference` calls
-once per rollout step (`src/smart/modules/agent_decoder.py`). Our wrapper
+once per rollout step (`catk/smart/modules/agent_decoder.py`). Our wrapper
 calls the original sampler unchanged (so attention/features are computed
 exactly like a real rollout) and then overwrites the sampled token, for
 every agent outside the "free" (queried) set, with that agent's own
@@ -313,10 +313,10 @@ python -m scripts.smart.ex_post_analysis \
     --out-dir logs/responsibility/plots
 ```
 
-All scripts run from the repo root (`catk/`) and load the SMART model
+All scripts run from the repo root (`careful/`) and load the SMART model
 config via a small dedicated Hydra tree, `configs/responsibility/eval.yaml`
 (see `responsibility/predictors/smart/native/pipeline.compose_responsibility_config`), rather
-than the full `src/run.py` training entry point.
+than the full `catk/run.py` training entry point.
 
 ## Reward-based fine-tuning (stage 5)
 
@@ -370,7 +370,7 @@ feature (the usual independent-learner simplification).
 Checkpoints keep the base checkpoint's Lightning format (its optimizer
 state dropped), so the fine-tuned `last.ckpt` works as `--ckpt` for every
 script here: selection evaluation, videos, and the WOSAC evaluation in
-`src/run.py`. What to compare, base vs fine-tuned, on held-out scenes:
+`catk/run.py`. What to compare, base vs fine-tuned, on held-out scenes:
 
 - `eval_log.csv` of the run: KL to the base, level reward, collision rate,
   and ADE / minADE of the 2 s rollouts against the log.

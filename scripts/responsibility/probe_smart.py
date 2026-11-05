@@ -18,12 +18,12 @@ SMART reacts where DenseTNT barely does: 0.5 s before the overlap it
 predicts the ego to hold back by about 0.7 m (DenseTNT: +0.07 m), while the
 adversary's own alternatives are about as committed (61% within 3 m in both).
 
-Run in catk's environment from the catk root, on catk caches made by
-run_smart.sh (export_catk.py) of CAT's scenes and of the logged scenes:
+Run from this repository's root, on CAT-K caches made by run_smart.sh
+(export_catk.py) of CAT's scenes and of the logged scenes:
 
-  cd ~/catk && ~/venvs/catk/bin/python <repo>/scripts/responsibility/probe_smart.py \\
-      --cat-cache <VAL>/smart/cat/cache --logged-cache <repo>/logs/catk/scenes/cache \\
-      --index <repo>/adv_scenes/cat.index.json --out <VAL>/smart_probe.csv
+  python -m scripts.responsibility.probe_smart \\
+      --cat-cache <VAL>/smart/cat/cache --logged-cache logs/catk/scenes/cache \\
+      --index adv_scenes/cat.index.json --out <VAL>/smart_probe.csv
 """
 import argparse
 import json
@@ -34,7 +34,6 @@ import numpy as np
 import pandas as pd
 import torch
 
-sys.path.insert(0, ".")  # the catk root (run from it)
 from src.responsibility.motion_set import (  # noqa: E402
     NEIGHBOR_FUTURE_HIDDEN, MotionSetSynthesizer, RolloutJob, shifted_context)
 from src.responsibility.pipeline import (  # noqa: E402

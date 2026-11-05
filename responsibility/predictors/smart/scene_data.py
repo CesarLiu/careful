@@ -1,7 +1,7 @@
 """A ``responsibility.scene.Scene`` as the PyG batch CAT-K's SMART reads,
 in memory, anchored at any context step.
 
-CAT-K caches a WOMD scenario in two stages (its src/data_preprocess.py):
+CAT-K caches a WOMD scenario in two stages (its catk/data_preprocess.py):
 protobuf decoders, then ``get_agent_features``, ``get_map_features`` /
 ``process_dynamic_map`` and ``preprocess_map``. ``responsibility.catk_export``
 rebuilds the decoders' output from a Scene; the second stage is CAT-K's own
@@ -29,10 +29,9 @@ from typing import Callable, Iterable
 import numpy as np
 
 from responsibility.catk_export import dynamic_map_infos, map_infos, track_infos
-from responsibility.predictors.smart.catk import require_catk
 from responsibility.scene import Scene
 
-PLACEHOLDER_MAP = 6e4  # CAT-K's "dummy empty map" position (src/smart/utils/preprocess.py)
+PLACEHOLDER_MAP = 6e4  # CAT-K's "dummy empty map" position (catk/smart/utils/preprocess.py)
 
 
 def check_map(scene: Scene, data: dict) -> bool:
@@ -49,12 +48,11 @@ def check_map(scene: Scene, data: dict) -> bool:
     return True
 
 
-def catk_stage_two(catk_root=None) -> Callable:
+def catk_stage_two() -> Callable:
     """``build(scene, predict=(), stem=None, current=10) -> dict``: CAT-K's
     cached-scenario dict of ``scene`` (what its pickles hold)."""
-    require_catk(catk_root)
-    from src.data_preprocess import get_agent_features, get_map_features, process_dynamic_map
-    from src.smart.utils.preprocess import get_polylines_from_polygon, preprocess_map
+    from catk.data_preprocess import get_agent_features, get_map_features, process_dynamic_map
+    from catk.smart.utils.preprocess import get_polylines_from_polygon, preprocess_map
 
     def build(scene: Scene, predict: Iterable[str] = (), stem=None, current: int = 10) -> dict:
         lights = process_dynamic_map(dynamic_map_infos(scene.dynamic_map_states, scene.n_steps))
@@ -69,11 +67,11 @@ def catk_stage_two(catk_root=None) -> Callable:
     return build
 
 
-def catk_batch_builder(catk_root=None, device: str = "cpu") -> Callable:
+def catk_batch_builder(device: str = "cpu") -> Callable:
     """``build(scene, current) -> torch_geometric Batch`` of one scenario, as
     CAT-K's batch_size=1 DataLoader yields it (WaymoTargetBuilderVal is
     ``HeteroData(data)``), on ``device``."""
-    stage_two = catk_stage_two(catk_root)
+    stage_two = catk_stage_two()
     from torch_geometric.data import Batch, HeteroData
 
     def build(scene: Scene, current: int):

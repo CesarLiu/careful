@@ -62,3 +62,26 @@ def test_settings_added_later_match_at_their_default(tmp_path):
         check_run_config(tmp_path, {"responsibility": {"d_sat": 10.0, "new": 0.5}}, defaults=defaults)
     with pytest.raises(ValueError, match="responsibility.new"):  # no defaults given: strict
         check_run_config(tmp_path, {"responsibility": {"d_sat": 10.0, "new": 1.0}})
+
+
+def test_results_pickled_by_catk4test_still_load():
+    """catk4test pickled its observations as src.responsibility.dataset_builder.ResponsibilityObservation
+    (and its HMMs as src.responsibility.hmm.GaussianHMM); results_io.load_pickle maps them here."""
+    import io
+    import pickle
+
+    import torch
+
+    from responsibility.predictors.smart.native.dataset_builder import ResponsibilityObservation
+    from responsibility.predictors.smart.native.results_io import legacy_module, load_pickle
+
+    obs = ResponsibilityObservation("s", 7, 2, 30, torch.tensor([0.5, 0.1]))
+    old = pickle.dumps([obs], protocol=0).replace(b"responsibility.predictors.smart.native.dataset_builder",
+                                                    b"src.responsibility.dataset_builder")
+    assert b"src.responsibility.dataset_builder" in old
+    back = load_pickle(io.BytesIO(old))
+    assert isinstance(back[0], ResponsibilityObservation) and back[0].k == 30
+    assert legacy_module("src.responsibility.hmm") == "responsibility.hmm"
+    assert legacy_module("src.responsibility.metrics") == "responsibility.predictors.smart.native.metrics"
+    assert legacy_module("src.smart.model.smart") == "catk.smart.model.smart"
+    assert legacy_module("numpy.core.multiarray") == "numpy.core.multiarray"

@@ -14,3 +14,6 @@ tmp/
 models_eval/
 rollouts_eval/
 adv_scenes/
+# checkpoints (SMART's ckpts/clsft_E9.ckpt etc.) and CAT-K's WOMD caches
+ckpts/
+data/

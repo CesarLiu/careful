@@ -12,9 +12,8 @@ model call, the exact per-token courtesy KL (``--courtesy-estimator exact``),
 the per-level reward networks, responsibility-aware candidate selection and
 the reward fine-tuning of SMART (finetune.py, the RL part on SMART).
 
-The SMART model code itself (``src.smart``, ``src.data_preprocess``) is
-CAT-K's and is imported from a CAT-K checkout: ``$CATK_ROOT`` (default
-``~/catk``), added to ``sys.path`` on import. ``geometry``, ``risk`` and
+The SMART model code itself is CAT-K's, in this repository's ``catk``
+package (``catk.smart``, ``catk.data_preprocess``). ``geometry``, ``risk`` and
 ``hmm`` are the shared ones in ``responsibility/`` (they were identical
 copies).
 
@@ -30,7 +29,3 @@ finetune        Reward fine-tuning of SMART toward a responsibility level.
 scenario_tags   Interaction / scene type tags of agent pairs.
 pipeline        End-to-end orchestration used by scripts/smart/*.
 """
-
-from responsibility.predictors.smart.catk import ensure_catk_on_path
-
-ensure_catk_on_path()
