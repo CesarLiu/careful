@@ -1,5 +1,7 @@
 # Counterfactual responsibility with CAT's DenseTNT
 
+> Note (`careful`, branch `td3-without-metadrive`): the MetaDrive scripts this reference describes for training and policy rollouts (`cat_RLtrain.py`, `cat_advgen.py`, `collect_rollouts.py`, `run_rl.sh`, `run_eval.sh`, `verify_adv_export.py`) are removed on this branch; training is `scripts/rl/train_td3.py` (README.md, docs/RUNBOOK.md step 7).
+
 Measures whether a vehicle — by default the self-driving car — drives
 aggressively, using the counterfactual responsibility metrics of Hsu et al.,
 ["Interpretable Trajectory Prediction for Autonomous Vehicles via

@@ -8,7 +8,7 @@
 
 - 原来的长实验命令还在各自的 runbook 里：
   - 指标计算：`responsibility/RUNBOOK_H200.md`，命令在 catk 环境里同样可用；
-  - 它的第 7–8 步（MetaDrive 闭环、`cat_RLtrain.py`）需要 Python 3.9，已由本文第 7 步代替；
+  - 它的第 7–8 步、第 10 步（MetaDrive 闭环、`cat_RLtrain.py`、`collect_rollouts.py`）用到的脚本在这个分支上已删除（`main` 上还有），由本文第 7 步代替；
   - SMART：`responsibility/CATK_H200.md`、`docs/smart/RUNBOOK.md`（脚本路径已从 `scripts/responsibility/` 改成 `scripts/smart/`）。
 - 本文只写新增的步骤。
 
@@ -64,7 +64,7 @@ bash scripts/setup_catk_env.sh
 python -m pytest tests -q
 ```
 
-本机（Python 3.11，torch 2.4.1 CPU，PyG 2.6.1，torch_cluster 1.6.3，TensorFlow 2.15）上的结果是 451 passed、3 skipped。跳过的那 3 个需要 UniTraj、WOMD protos 或 MetaDrive。
+本机（Python 3.11，torch 2.4.1 CPU，PyG 2.6.1，torch_cluster 1.6.3，TensorFlow 2.15）上的结果是 446 passed、3 skipped。跳过的那 3 个需要 UniTraj、WOMD protos 或 MetaDrive。
 
 服务器上的 catk 环境是 TensorFlow 2.12、numpy < 1.24，和本机不同。测试数如果不一样，把失败的输出发回来。
 

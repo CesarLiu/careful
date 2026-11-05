@@ -53,7 +53,6 @@ responsibility/                 predictor-agnostic metrics and tools (operate on
 rl/                             MetaDrive-free CAT training: log-replay simulator, batched adversary, TD3, blame weighting
 scripts/rl/                     build the scene bank, precompute CAT's candidates, check the simulator, train TD3
 advgen/                         CAT's DenseTNT and adversary generator (upstream code)
-saferl_algo/ saferl_plotter/ cat_RLtrain.py cat_advgen.py    CAT's MetaDrive TD3 (upstream, kept for reference; needs Python 3.9)
 scripts/responsibility/         CLI for the predictor-agnostic pipeline (any --model)
 scripts/smart/                  CLI for the native SMART pipeline (CAT-K environment)
 tests/responsibility/  tests/smart/  tests/rl_training/
@@ -202,9 +201,11 @@ python -m scripts.rl.train_td3 --bank logs/rl/scenes.npz --candidates logs/rl/ca
 The fair adversary's *candidates* are always CAT's 32 DenseTNT NMS modes;
 `precompute_candidates.py --resp_model` takes the motion sets behind β (the
 adversary's alternatives) and avoidability (the ego's) from another
-predictor, which must give 8 s of future. `cat_RLtrain.py` and
-`cat_advgen.py`, CAT's MetaDrive scripts, are kept unchanged for reference;
-they need MetaDrive and Python 3.9 and are not part of the CAT-K environment.
+predictor, which must give 8 s of future. CAT's MetaDrive training and
+evaluation scripts (`cat_RLtrain.py`, `cat_advgen.py`, `saferl_algo/`,
+`saferl_plotter/`, `scripts/3_train_fixed_adv.py`, `scripts/4_train_ruled_adv.py`,
+`scripts/plot.py`, and `collect_rollouts.py`, `verify_adv_export.py`, `run_rl.sh`,
+`run_eval.sh` in `scripts/responsibility/`) are not on this branch; `main` has them.
 
 ## Environments
 
@@ -251,7 +252,7 @@ TensorFlow, a UniTraj checkout or CAT-K skip or fail to collect without them.
 
 Verified while merging, in one Python 3.11 environment (torch 2.4.1 CPU, PyG 2.6.1, torch_cluster 1.6.3, TensorFlow 2.15):
 
-- `pytest tests`: 451 passed, 3 skipped (they need a UniTraj checkout, WOMD protos and MetaDrive); `test_unitraj.py` alone, with `UNITRAJ_ROOT` set, passes all 15 tests;
+- `pytest tests`: 446 passed, 3 skipped (they need a UniTraj checkout, WOMD protos and MetaDrive); `test_unitraj.py` alone, with `UNITRAJ_ROOT` set, passes all 15 tests;
 - `scripts/smart/verify_adapter.py` on a randomly initialised CAT-K SMART (`smart_nano_1M`), a synthetic scene with WOMD's 0.5 m point spacing: all 7 checks pass. SMART sees the map (80 tokens), the first sampled position is within 1.16 m of the logged one, samples are reproducible from the generator, removing a neighbour changes the free agent's token log-probabilities, and rollouts stop where the log does (80 steps from k = 10, 70 from k = 20);
 - `scripts/smart/compare_adapter_native.py` on the same model and 3 synthetic scenes (78 window-neighbour pairs, 2 seeds per path): the adapter and CAT-K's native pipeline agree within seed noise (safety Spearman 0.960 against 0.951–0.970 between seeds, courtesy 0.875 against 0.893–0.904);
 - UniTraj Wayformer and AutoBot (random weights) through `unitraj_predictor` and the metrics: 6 modes of 60 steps each, finite β_s and β_c;

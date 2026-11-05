@@ -1,5 +1,7 @@
 # H200 服务器实验命令清单
 
+> 注（`careful` 仓库的 `td3-without-metadrive` 分支）：第 7–8、10 步用到的 MetaDrive 脚本（`cat_RLtrain.py`、`cat_advgen.py`、`collect_rollouts.py`、`run_rl.sh`、`run_eval.sh` 等）在这个分支上已删除，训练改用 `scripts/rl/train_td3.py`，见 `docs/RUNBOOK.md` 第 7 步。
+
 按顺序执行；所有命令都在仓库根目录（`cat/`）下运行。每一步写明了产出和怎么检查。
 标 ⚠ 的步骤依赖 CAT 的 MetaDrive 仿真栈，这部分我在本地无法运行（没有 MetaDrive），第一次运行时请留意报错。
 
